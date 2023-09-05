@@ -14,7 +14,7 @@ typedef struct PCB {
 } PCB;
 
 struct PCB processTable[MAXPROC];
-
+int currentProcess;
 void init_main(void) {
     phase2_start_service_processes();
     phase3_start_service_processes();
@@ -35,6 +35,7 @@ void phase1_init(void) {
 
 void startProcesses(void) {
     USLOSS_Context *old = NULL;
+    currentProcess = 1;
     USLOSS_ContextSwitch(old, &processTable[1].context);
 }
 
@@ -52,7 +53,7 @@ void quit(int status, int switchToPid) {
 }
 
 int getpid(void) {
-
+    return &processTable[currentProcess].pid;
 }
 
 void dumpProcesses(void) {
@@ -60,5 +61,7 @@ void dumpProcesses(void) {
 }
 
 void TEMP_switchTo(int pid) {
-
+    USLOSS_Context *old = &processTable[currentProcess].context;
+    currentProcess = pid;
+    USLOSS_ContextSwitch(old, &processTable[pid].context);
 }
