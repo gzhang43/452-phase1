@@ -3,11 +3,17 @@
 #include "phase1.h"
 
 typedef struct PCB {
-    USLOSS_Context* context;
-    int pid; 
+    USLOSS_Context context;
+    int pid;
+    char name[MAXNAME];
+    int priority;
+    int status;
+    struct PCB* parent;
+    struct PCB* child;
+    struct PCB* next_sibling;    
 } PCB;
 
-PCB processTable[MAXPROC];
+struct PCB processTable[MAXPROC];
 
 void init_main(void) {
     phase2_start_service_processes();
@@ -21,15 +27,15 @@ void phase1_init(void) {
     int pid = 1;
     struct PCB init;
     void *stack = malloc(USLOSS_MIN_STACK);
-    
     init.pid = pid;
-    USLOSS_ContextInit(init.context, stack, USLOSS_MIN_STACK, NULL, &init_main);
+
+    USLOSS_ContextInit(&init.context, stack, USLOSS_MIN_STACK, NULL, init_main);
     processTable[pid] = init;
 }
 
 void startProcesses(void) {
-    USLOSS_Context *old;
-    USLOSS_ContextSwitch(old, processTable[1].context);
+    USLOSS_Context *old = NULL;
+    USLOSS_ContextSwitch(old, &processTable[1].context);
 }
 
 int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
