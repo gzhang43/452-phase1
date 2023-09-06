@@ -53,11 +53,32 @@ void quit(int status, int switchToPid) {
 }
 
 int getpid(void) {
-    return &processTable[currentProcess].pid;
+    return processTable[currentProcess].pid;
 }
 
 void dumpProcesses(void) {
-
+    int i = 0;
+    while (i < MAXPROC){
+	if (processTable[i] != NULL){
+	    USLOSS_Console("\nProcess at index %d", i);
+	    USLOSS_Console("\nName: ");
+	    USLOSS_Console(processTable[i].name);
+	    USLOSS_Console("\npid: %d", processTable[i].pid);
+	    USLOSS_Console("\nPriority: %d", processTable[i].priority);
+	    USLOSS_Console("\nStatus: %d", processTable[i].status);
+	    if (processTable[i].parent != NULL){
+		USLOSS_Console("\nParent pid: %d", processTable[i].parent.pid);
+	    }
+	    if (processTable[i].child != NULL){
+		USLOSS_Console("\nChild pid: %d", processTable[i].child.pid);
+	    }
+	    if (processTable[i].next_sibling != NULL){
+		USLOSS_Console("\nNext Sibling pid: %d", processTable[i].next_sibling.pid);
+	    }
+	    USLOSS_Console("\n");
+	}
+	i++;
+    }
 }
 
 void TEMP_switchTo(int pid) {
