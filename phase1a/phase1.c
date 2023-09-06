@@ -45,7 +45,9 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
 }
 
 int join(int *status) {
-
+    if (processTable[currentProcess].child == NULL){
+	return -2;
+    }
 }
 
 void quit(int status, int switchToPid) {
@@ -53,13 +55,13 @@ void quit(int status, int switchToPid) {
 }
 
 int getpid(void) {
-    return processTable[currentProcess].pid;
+    return currentProcess;
 }
 
 void dumpProcesses(void) {
     int i = 0;
     while (i < MAXPROC){
-	if (processTable[i] != NULL){
+	if (&processTable[i] != NULL){
 	    USLOSS_Console("\nProcess at index %d", i);
 	    USLOSS_Console("\nName: ");
 	    USLOSS_Console(processTable[i].name);
@@ -67,13 +69,13 @@ void dumpProcesses(void) {
 	    USLOSS_Console("\nPriority: %d", processTable[i].priority);
 	    USLOSS_Console("\nStatus: %d", processTable[i].status);
 	    if (processTable[i].parent != NULL){
-		USLOSS_Console("\nParent pid: %d", processTable[i].parent.pid);
+		USLOSS_Console("\nParent pid: %d", processTable[i].parent->pid);
 	    }
 	    if (processTable[i].child != NULL){
-		USLOSS_Console("\nChild pid: %d", processTable[i].child.pid);
+		USLOSS_Console("\nChild pid: %d", processTable[i].child->pid);
 	    }
 	    if (processTable[i].next_sibling != NULL){
-		USLOSS_Console("\nNext Sibling pid: %d", processTable[i].next_sibling.pid);
+		USLOSS_Console("\nNext Sibling pid: %d", processTable[i].next_sibling->pid);
 	    }
 	    USLOSS_Console("\n");
 	}
