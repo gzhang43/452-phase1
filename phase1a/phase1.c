@@ -47,6 +47,9 @@ void init_main(void) {
     phase5_start_service_processes();
 
     fork1("testcase_main", testcase_main, NULL, USLOSS_MIN_STACK, 3); 
+    //TODO: create sentinel process
+    currentProcess = 2;
+    USLOSS_ContextSwitch(&processTable[1].context, &processTable[2].context);
 }
 
 // Initialize data structures including process table entry for init
@@ -129,6 +132,7 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     processTable[pid % MAXPROC] = child;
     
     addChildToParent(processTable[currentProcess % MAXPROC], child);
+    return pid;
 }
 
 int join(int *status) {
@@ -162,7 +166,8 @@ void dumpProcesses(void) {
 		USLOSS_Console("\nChild pid: %d", processTable[i].child->pid);
 	    }
 	    if (processTable[i].nextSibling != NULL){
-		USLOSS_Console("\nNext Sibling pid: %d", processTable[i].nextSibling->pid);
+		USLOSS_Console("\nNext Sibling pid: %d", 
+                    processTable[i].nextSibling->pid);
 	    }
 	    USLOSS_Console("\n");
 	}
