@@ -19,6 +19,7 @@ typedef struct PCB {
 } PCB;
 
 struct PCB processTable[MAXPROC];
+
 int lastAssignedPid;
 int currentProcess;
 int numProcesses;
@@ -68,6 +69,7 @@ void phase1_init(void) {
 void startProcesses(void) {
     USLOSS_Context *old = NULL;
     numProcesses++;
+    currentProcess = 1;
     USLOSS_ContextSwitch(old, &processTable[1].context);
 }
 
@@ -130,7 +132,9 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
 }
 
 int join(int *status) {
-
+    if (processTable[currentProcess].child == NULL){
+	return -2;
+    }
 }
 
 void quit(int status, int switchToPid) {
@@ -138,13 +142,36 @@ void quit(int status, int switchToPid) {
 }
 
 int getpid(void) {
-
+    return currentProcess;
 }
 
 void dumpProcesses(void) {
-
+    int i = 0;
+    while (i < MAXPROC){
+	if (&processTable[i] != NULL){
+	    USLOSS_Console("\nProcess at index %d", i);
+	    USLOSS_Console("\nName: ");
+	    USLOSS_Console(processTable[i].name);
+	    USLOSS_Console("\npid: %d", processTable[i].pid);
+	    USLOSS_Console("\nPriority: %d", processTable[i].priority);
+	    USLOSS_Console("\nStatus: %d", processTable[i].status);
+	    if (processTable[i].parent != NULL){
+		USLOSS_Console("\nParent pid: %d", processTable[i].parent->pid);
+	    }
+	    if (processTable[i].child != NULL){
+		USLOSS_Console("\nChild pid: %d", processTable[i].child->pid);
+	    }
+	    if (processTable[i].nextSibling != NULL){
+		USLOSS_Console("\nNext Sibling pid: %d", processTable[i].nextSibling->pid);
+	    }
+	    USLOSS_Console("\n");
+	}
+	i++;
+    }
 }
 
 void TEMP_switchTo(int pid) {
-
+    USLOSS_Context *old = &processTable[currentProcess].context;
+    currentProcess = pid;
+    USLOSS_ContextSwitch(old, &processTable[pid].context);
 }
