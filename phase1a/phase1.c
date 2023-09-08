@@ -10,6 +10,8 @@ typedef struct PCB {
     char name[MAXNAME];
     int priority;
     int status;
+    int(*startFunc)(char*);
+    char *arg;
     struct PCB* parent;
     struct PCB* child;
     struct PCB* nextSibling;   
@@ -20,12 +22,31 @@ struct PCB processTable[MAXPROC];
 
 int lastAssignedPid;
 int currentProcess;
+int numProcesses;
+
+void sentinel(void) {
+    while (1) {
+        if (phase2_check_io() == 0) {
+            USLOSS_Console("Deadlock detected.\n");
+            USLOSS_Halt(0);
+        }
+        USLOSS_WaitInt();
+    }
+}
+
+void launcherFunc(void) {
+   struct PCB process = processTable[lastAssignedPid % MAXPROC];
+   int ret = process.startFunc(process.arg);
+   //TODO: Call quit here for returned startFunc()
+}
 
 void init_main(void) {
     phase2_start_service_processes();
     phase3_start_service_processes();
     phase4_start_service_processes();
     phase5_start_service_processes();
+
+    fork1("testcase_main", testcase_main, NULL, USLOSS_MIN_STACK, 3); 
 }
 
 // Initialize data structures including process table entry for init
@@ -47,13 +68,13 @@ void phase1_init(void) {
 
 void startProcesses(void) {
     USLOSS_Context *old = NULL;
+    numProcesses++;
     currentProcess = 1;
     USLOSS_ContextSwitch(old, &processTable[1].context);
 }
 
 bool hasEmptySlots() {
-    // TODO: Check if number of processes is less than table size
-    return true;
+    return numProcesses < MAXPROC;
 }
 
 int getNextPid() {
@@ -64,12 +85,24 @@ int getNextPid() {
     return nextPid;
 }
 
+void addChildToParent(struct PCB parent, struct PCB child) {
+    if (parent.child = NULL) {
+        parent.child = &child;
+    }
+    else {
+        struct PCB* temp = parent.child;
+        parent.child = &child;
+        child.nextSibling = temp;
+    }
+} 
+
 int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
         int priority) {
     if (stacksize < USLOSS_MIN_STACK) {
         return -2;
     }
-    else if ((priority < 1 || priority > 5) || name == NULL ||
+    else if (((priority < 1 || priority > 5) && 
+            strcmp(name, "sentinel") != 0) || name == NULL ||
             func == NULL || strlen(name) > MAXNAME ||
             !hasEmptySlots()) {
         return -1;
@@ -79,13 +112,23 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     int pid = getNextPid();
     struct PCB child;
     void *stack = malloc(stacksize);
+
     child.pid = pid;
-    child.priority = priority;
     strcpy(child.name, name);
+    child.priority = priority;
+    child.status = 0; // set status to ready
+    child.startFunc = func;
+    child.arg = arg;
     child.parent = &processTable[currentProcess]; 
     child.child = NULL;
     child.nextSibling = NULL;
     child.filled = 1;
+    
+    lastAssignedPid = pid;
+    USLOSS_ContextInit(&child.context, stack, stacksize, NULL, launcherFunc); 
+    processTable[pid % MAXPROC] = child;
+    
+    addChildToParent(processTable[currentProcess % MAXPROC], child);
 }
 
 int join(int *status) {
