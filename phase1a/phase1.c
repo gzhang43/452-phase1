@@ -118,8 +118,8 @@ void dumpProcesses(void) {
 	    if (processTable[i].child != NULL){
 		USLOSS_Console("\nChild pid: %d", processTable[i].child->pid);
 	    }
-	    if (processTable[i].next_sibling != NULL){
-		USLOSS_Console("\nNext Sibling pid: %d", processTable[i].next_sibling->pid);
+	    if (processTable[i].nextSibling != NULL){
+		USLOSS_Console("\nNext Sibling pid: %d", processTable[i].nextSibling->pid);
 	    }
 	    USLOSS_Console("\n");
 	}
