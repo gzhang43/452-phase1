@@ -37,7 +37,7 @@ void sentinel(void) {
 }
 
 void launchFunc(void) {
-    struct PCB process = processTable[lastAssignedPid % MAXPROC];
+    struct PCB process = processTable[currentProcess % MAXPROC];
     int ret = process.startFunc(process.arg);
     USLOSS_Console("Error: User function returned.\n");
     USLOSS_Halt(1);
