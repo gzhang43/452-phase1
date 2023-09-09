@@ -10,15 +10,17 @@ typedef struct PCB {
     char name[MAXNAME];
     int priority;
     int status;
+    int terminated; // 1 = yes, 0 = no
     int(*startFunc)(char*);
     char *arg;
     struct PCB* parent;
     struct PCB* child;
     struct PCB* nextSibling;   
+    struct PCB* prevSibling;
     int filled; // if this pcb is in use by a process
 } PCB;
 
-struct PCB processTable[MAXPROC];
+struct PCB processTable[MAXPROC+1];
 
 int lastAssignedPid;
 int currentProcess;
@@ -34,10 +36,17 @@ void sentinel(void) {
     }
 }
 
-void launcherFunc(void) {
-   struct PCB process = processTable[lastAssignedPid % MAXPROC];
-   int ret = process.startFunc(process.arg);
-   //TODO: Call quit here for returned startFunc()
+void launchFunc(void) {
+    struct PCB process = processTable[lastAssignedPid % MAXPROC];
+    int ret = process.startFunc(process.arg);
+    USLOSS_Console("Error: User function returned.\n");
+    USLOSS_Halt(1);
+}
+
+void launchTestCaseMain(void) {
+    int ret = (*testcase_main)();
+    USLOSS_Console("Test case main function returned.\n");
+    USLOSS_Halt(0);
 }
 
 void init_main(void) {
@@ -46,10 +55,10 @@ void init_main(void) {
     phase4_start_service_processes();
     phase5_start_service_processes();
 
-    fork1("testcase_main", testcase_main, NULL, USLOSS_MIN_STACK, 3); 
-    //TODO: create sentinel process
+    fork1("testcase_main", NULL, NULL, USLOSS_MIN_STACK, 3); 
+    fork1("sentinel", NULL, NULL, USLOSS_MIN_STACK, 7);
     currentProcess = 2;
-    USLOSS_ContextSwitch(&processTable[1].context, &processTable[2].context);
+    USLOSS_ContextSwitch(&processTable[1].context, &processTable[2].context);    
 }
 
 // Initialize data structures including process table entry for init
@@ -62,6 +71,8 @@ void phase1_init(void) {
     struct PCB init;
     void *stack = malloc(USLOSS_MIN_STACK);
     init.pid = pid;
+    strcpy(init.name, "init");
+    init.priority = 6;
     init.filled = 1;
 
     USLOSS_ContextInit(&init.context, stack, USLOSS_MIN_STACK, NULL, init_main);
@@ -89,13 +100,14 @@ int getNextPid() {
 }
 
 void addChildToParent(struct PCB parent, struct PCB child) {
-    if (parent.child = NULL) {
+    if (parent.child == NULL) {
         parent.child = &child;
     }
     else {
         struct PCB* temp = parent.child;
         parent.child = &child;
         child.nextSibling = temp;
+        temp->prevSibling = &child;
     }
 } 
 
@@ -106,7 +118,8 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     }
     else if (((priority < 1 || priority > 5) && 
             strcmp(name, "sentinel") != 0) || name == NULL ||
-            func == NULL || strlen(name) > MAXNAME ||
+            (func == NULL && strcmp(name, "sentinel") != 0 && 
+            strcmp(name, "testcase_main") != 0) || strlen(name) > MAXNAME ||
             !hasEmptySlots()) {
         return -1;
     }    
@@ -120,17 +133,28 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     strcpy(child.name, name);
     child.priority = priority;
     child.status = 0; // set status to ready
+    child.terminated = 0;
     child.startFunc = func;
     child.arg = arg;
     child.parent = &processTable[currentProcess]; 
     child.child = NULL;
     child.nextSibling = NULL;
+    child.prevSibling = NULL;
     child.filled = 1;
-    
     lastAssignedPid = pid;
-    USLOSS_ContextInit(&child.context, stack, stacksize, NULL, launcherFunc); 
-    processTable[pid % MAXPROC] = child;
-    
+
+    if (strcmp(name, "testcase_main") == 0) {
+        USLOSS_ContextInit(&child.context, stack, stacksize, NULL, launchTestCaseMain);
+    }
+    else if (strcmp(name, "sentinel") == 0) {
+        USLOSS_ContextInit(&child.context, stack, stacksize, NULL, sentinel);
+    }
+    else {
+        USLOSS_ContextInit(&child.context, stack, stacksize, NULL, launchFunc); 
+    }
+
+    processTable[pid % MAXPROC] = child; 
+    numProcesses++;
     addChildToParent(processTable[currentProcess % MAXPROC], child);
     return pid;
 }
@@ -142,7 +166,11 @@ int join(int *status) {
 }
 
 void quit(int status, int switchToPid) {
-
+    struct PCB process = processTable[currentProcess % MAXPROC];
+    process.status = status;
+    process.terminated = 1;
+    
+    TEMP_switchTo(switchToPid); 
 }
 
 int getpid(void) {
@@ -176,7 +204,7 @@ void dumpProcesses(void) {
 }
 
 void TEMP_switchTo(int pid) {
-    USLOSS_Context *old = &processTable[currentProcess].context;
+    USLOSS_Context *old = &processTable[currentProcess % MAXPROC].context;
     currentProcess = pid;
-    USLOSS_ContextSwitch(old, &processTable[pid].context);
+    USLOSS_ContextSwitch(old, &processTable[pid % MAXPROC].context);
 }
