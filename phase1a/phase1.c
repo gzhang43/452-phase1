@@ -163,6 +163,18 @@ int join(int *status) {
     if (processTable[currentProcess].child == NULL){
 	return -2;
     }
+    int childPid = childStatus(processTable[currentProcess], 0);
+    return childPid;
+}
+
+int childStatus(struct PCB rootChild, int status){
+    if (rootChild.status == 0){
+	status = rootChild.pid;
+	return status;
+    }
+    childStatus(rootChild.nextSibling, status);
+    childStatus(rootChild.prevSibling, status);
+    return status;
 }
 
 void quit(int status, int switchToPid) {
@@ -180,7 +192,7 @@ int getpid(void) {
 void dumpProcesses(void) {
     int i = 0;
     while (i < MAXPROC){
-	if (&processTable[i] != NULL){
+	if (&processTable[i].filled != 1){
 	    USLOSS_Console("\nProcess at index %d", i);
 	    USLOSS_Console("\nName: ");
 	    USLOSS_Console(processTable[i].name);
