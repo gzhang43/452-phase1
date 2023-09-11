@@ -91,6 +91,10 @@ void phase1_init(void) {
 }
 
 void startProcesses(void) {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
     USLOSS_Context *old = NULL;
     numProcesses++;
     currentProcess = 1;
