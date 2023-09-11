@@ -270,25 +270,46 @@ void dumpProcesses(void) {
     int i = 0;
     while (i < MAXPROC){
 	if (processTable[i].filled == 1){
-	    USLOSS_Console("\nProcess at index %d", i);
-	    USLOSS_Console("\nName: ");
+	    USLOSS_Console("\nPROCESS AT INDEX %d", i);
+	    USLOSS_Console("\nNAME: ");
 	    USLOSS_Console(processTable[i].name);
-	    USLOSS_Console("\npid: %d", processTable[i].pid);
-	    USLOSS_Console("\nPriority: %d", processTable[i].priority);
-	    USLOSS_Console("\nStatus: %d", processTable[i].status);
+	    USLOSS_Console("\nPID: %d", processTable[i].pid);
+	    USLOSS_Console("\nPRIORITY: %d", processTable[i].priority);
+	    USLOSS_Console("\nSTATUS: ");
+	    printStatus(i);
 	    if (processTable[i].parent != NULL){
-		USLOSS_Console("\nParent pid: %d", processTable[i].parent->pid);
+		USLOSS_Console("\nPARENT PID: %d", processTable[i].parent->pid);
 	    }
 	    if (processTable[i].child != NULL){
-		USLOSS_Console("\nChild pid: %d", processTable[i].child->pid);
+		USLOSS_Console("\nCHILD PID: %d", processTable[i].child->pid);
 	    }
 	    if (processTable[i].nextSibling != NULL){
-		USLOSS_Console("\nNext Sibling pid: %d", 
-                    processTable[i].nextSibling->pid);
+		USLOSS_Console("\nNEXT SIBLING PID: %d", processTable[i].nextSibling->pid);
+	    }
+	    if (processTable[i].prevSibling != NULL){
+		USLOSS_Console("\nPREV SIBLING PID: %d", processTable[i].prevSibling->pid);
 	    }
 	    USLOSS_Console("\n");
 	}
 	i++;
+    }
+}
+
+void printStatus(int pid){
+    if (pid == currentProcess){
+	USLOSS_Console("Running");
+	return;
+    }
+    if (processTable[pid].status > 0){
+	if (processTable[pid].terminated == 1){
+	    USLOSS_Console("Terminated(%d)", processTable[pid].status);
+	    return;
+	}
+	USLOSS_Console("Blocked");
+	return;
+    }
+    if (processTable[pid].status == 0){
+	USLOSS_Console("Runnable");
     }
 }
 
