@@ -4,6 +4,9 @@
 #include <string.h>
 #include "phase1.h"
 
+void printStatus(int pid);
+
+//PCB Struct definition
 typedef struct PCB {
     USLOSS_Context context;
     int pid;
@@ -254,6 +257,7 @@ void quit(int status, int switchToPid) {
     TEMP_switchTo(switchToPid); 
 }
 
+//Returns the pid of the current running process
 int getpid(void) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
@@ -262,39 +266,60 @@ int getpid(void) {
     return currentProcess;
 }
 
+/**
+Prints out the following information about the processes in the PCB table.
+PID
+Parent PID (if any)
+Child PID (if any)
+Next Sibling PID (if any)
+Prev Sibling PID (if any)
+Name of the process
+Priority
+State of the process
+**/
 void dumpProcesses(void) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
         USLOSS_Halt(1);
     }
+    USLOSS_Console("PID PPID CPID NSPID PSPID NAME              PRIORITY STATE\n");
     int i = 0;
     while (i < MAXPROC){
 	if (processTable[i].filled == 1){
-	    USLOSS_Console("\nPROCESS AT INDEX %d", i);
-	    USLOSS_Console("\nNAME: ");
-	    USLOSS_Console(processTable[i].name);
-	    USLOSS_Console("\nPID: %d", processTable[i].pid);
-	    USLOSS_Console("\nPRIORITY: %d", processTable[i].priority);
-	    USLOSS_Console("\nSTATUS: ");
-	    printStatus(i);
+	    USLOSS_Console("%*d ", -3,  processTable[i].pid);
 	    if (processTable[i].parent != NULL){
-		USLOSS_Console("\nPARENT PID: %d", processTable[i].parent->pid);
-	    }
+		USLOSS_Console("%*d ", -4, processTable[i].parent->pid);
+	    } else {USLOSS_Console("null ");
+		}
 	    if (processTable[i].child != NULL){
-		USLOSS_Console("\nCHILD PID: %d", processTable[i].child->pid);
-	    }
+		USLOSS_Console("%*d ", -4, processTable[i].child->pid);
+	    } else {USLOSS_Console("null ");
+		}
 	    if (processTable[i].nextSibling != NULL){
-		USLOSS_Console("\nNEXT SIBLING PID: %d", processTable[i].nextSibling->pid);
-	    }
+		USLOSS_Console("%*d ", -5, processTable[i].nextSibling->pid);
+	    } else {USLOSS_Console("null  ");
+		}
 	    if (processTable[i].prevSibling != NULL){
-		USLOSS_Console("\nPREV SIBLING PID: %d", processTable[i].prevSibling->pid);
-	    }
+		USLOSS_Console("%*d ", -5, processTable[i].prevSibling->pid);
+	    } else {USLOSS_Console("null  ");
+		}
+	    USLOSS_Console("%*s", -18, processTable[i].name);
+	    USLOSS_Console("%*d  ", 8, processTable[i].priority);
+	    printStatus(i);
 	    USLOSS_Console("\n");
 	}
 	i++;
     }
 }
 
+/**
+Using the status field of the PCB struct, determines the state of a process
+with the given parameter pid. If the pid is the pid of the current process, the
+status is "Running"
+If status > 0 and the terminated field is 1, then the process has terminated and prints
+with its status number. If terminated is not 0, then the process is "Blocked".
+If the status is 0, then the process is "Runnable"
+**/
 void printStatus(int pid){
     if (pid == currentProcess){
 	USLOSS_Console("Running");
@@ -313,6 +338,13 @@ void printStatus(int pid){
     }
 }
 
+/*
+Parameters:
+	int pid: Integer representing the pid of the process to switch to
+
+A temporary function to manually switch from the current process to another given process
+The state of the current process is saved before context switching to the new process.
+*/
 void TEMP_switchTo(int pid) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
