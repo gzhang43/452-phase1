@@ -28,6 +28,11 @@ int currentProcess;
 int numProcesses;
 
 void sentinel(void) {
+    // If rightmost bit is set to 0, then Psr will be an even int
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
     while (1) {
         if (phase2_check_io() == 0) {
             USLOSS_Console("Deadlock detected.\n");
@@ -51,6 +56,10 @@ void launchTestCaseMain(void) {
 }
 
 void init_main(void) {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
     phase2_start_service_processes();
     phase3_start_service_processes();
     phase4_start_service_processes();
@@ -64,6 +73,10 @@ void init_main(void) {
 
 // Initialize data structures including process table entry for init
 void phase1_init(void) {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
     for (int i = 0; i < MAXPROC; i++) {
         processTable[i].filled = 0;
     }
@@ -82,6 +95,10 @@ void phase1_init(void) {
 }
 
 void startProcesses(void) {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
     USLOSS_Context *old = NULL;
     numProcesses++;
     currentProcess = 1;
@@ -89,10 +106,18 @@ void startProcesses(void) {
 }
 
 bool hasEmptySlots() {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
     return numProcesses < MAXPROC;
 }
 
 int getNextPid() {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
     int nextPid = lastAssignedPid + 1;
     while (processTable[nextPid % MAXPROC].filled == 1) {
         nextPid++;
@@ -114,6 +139,10 @@ void addChildToParent(struct PCB *parent, struct PCB *child) {
 
 int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
         int priority) {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
     if (stacksize < USLOSS_MIN_STACK) {
         return -2;
     }
@@ -194,6 +223,10 @@ void removeChildFromParent(struct PCB *child, struct PCB *parent) {
 }
 
 int join(int *status) {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
     if (processTable[currentProcess % MAXPROC].child == NULL){
 	return -2;
     }
@@ -212,16 +245,28 @@ int join(int *status) {
 }
 
 void quit(int status, int switchToPid) {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
     processTable[currentProcess % MAXPROC].status = status;
     processTable[currentProcess % MAXPROC].terminated = 1;    
     TEMP_switchTo(switchToPid); 
 }
 
 int getpid(void) {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
     return currentProcess;
 }
 
 void dumpProcesses(void) {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
     int i = 0;
     while (i < MAXPROC){
 	if (processTable[i].filled == 1){
@@ -248,6 +293,10 @@ void dumpProcesses(void) {
 }
 
 void TEMP_switchTo(int pid) {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
     USLOSS_Context *old = &processTable[currentProcess % MAXPROC].context;
     currentProcess = pid;
     USLOSS_ContextSwitch(old, &processTable[pid % MAXPROC].context);
