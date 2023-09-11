@@ -73,6 +73,10 @@ void init_main(void) {
 
 // Initialize data structures including process table entry for init
 void phase1_init(void) {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
     for (int i = 0; i < MAXPROC; i++) {
         processTable[i].filled = 0;
     }
