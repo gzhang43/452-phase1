@@ -100,7 +100,7 @@ int getNextPid() {
     return nextPid;
 }
 
-void addChildToParent(struct PCB* parent, struct PCB* child) {
+void addChildToParent(struct PCB *parent, struct PCB *child) {
     if (parent->child == NULL) {
         parent->child = child;
     }
@@ -156,13 +156,23 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     }
 
     processTable[pid % MAXPROC] = child; 
+    
+    // add as child to parent
+    if (processTable[currentProcess % MAXPROC].child == NULL) {
+        processTable[currentProcess % MAXPROC].child = &processTable[pid % MAXPROC];
+    }
+    else {
+        struct PCB *temp = processTable[currentProcess % MAXPROC].child;
+        processTable[currentProcess % MAXPROC].child = &processTable[pid % MAXPROC];
+        child.nextSibling = temp;
+        temp->prevSibling = &processTable[pid % MAXPROC];
+    }
     numProcesses++;
-    addChildToParent(&processTable[currentProcess % MAXPROC], &child);
     return pid;
 }
 
-int getTerminatedChild(struct PCB process){
-    struct PCB rootChild = *process.child;
+int getTerminatedChild(struct PCB *process){
+    struct PCB rootChild = *(process->child);
     if (rootChild.nextSibling == NULL && rootChild.terminated == 1){
 	return rootChild.pid;
     }
@@ -176,7 +186,7 @@ int getTerminatedChild(struct PCB process){
     return temp->pid;
 }
 
-void removeChildFromParent(struct PCB* child, struct PCB* parent) {
+void removeChildFromParent(struct PCB *child, struct PCB *parent) {
     if (child->prevSibling == NULL) {
         parent->child = child->nextSibling; // remove child from head of list
     }
@@ -188,25 +198,25 @@ void removeChildFromParent(struct PCB* child, struct PCB* parent) {
 }
 
 int join(int *status) {
-    if (processTable[currentProcess].child == NULL){
+    if (processTable[currentProcess % MAXPROC].child == NULL){
 	return -2;
     }
-    int childPid = getTerminatedChild(processTable[currentProcess]);
+    int childPid = getTerminatedChild(&processTable[currentProcess % MAXPROC]);
     // set out-value of status via pointer
-    *status = processTable[childPid].status;
+    *status = processTable[childPid % MAXPROC].status;
 
     // free stack of child
-    free(processTable[childPid].stack);
-    processTable[childPid].filled = 0; // set PCB entry to free
-    // remove child from parent's list of child
+    free(processTable[childPid % MAXPROC].stack);
+    processTable[childPid % MAXPROC].filled = 0; // set PCB entry to free
+    removeChildFromParent(&processTable[childPid % MAXPROC], &processTable[currentProcess % MAXPROC]);
+
     numProcesses--;
     return childPid;
 }
 
 void quit(int status, int switchToPid) {
-    struct PCB process = processTable[currentProcess % MAXPROC];
-    process.status = status;
-    process.terminated = 1;    
+    processTable[currentProcess % MAXPROC].status = status;
+    processTable[currentProcess % MAXPROC].terminated = 1;    
     TEMP_switchTo(switchToPid); 
 }
 
