@@ -17,6 +17,7 @@ typedef struct PCB {
     struct PCB* child;
     struct PCB* nextSibling;   
     struct PCB* prevSibling;
+    void *stack;
     int filled; // if this pcb is in use by a process
 } PCB;
 
@@ -99,15 +100,15 @@ int getNextPid() {
     return nextPid;
 }
 
-void addChildToParent(struct PCB parent, struct PCB child) {
-    if (parent.child == NULL) {
-        parent.child = &child;
+void addChildToParent(struct PCB *parent, struct PCB *child) {
+    if (parent->child == NULL) {
+        parent->child = child;
     }
     else {
-        struct PCB* temp = parent.child;
-        parent.child = &child;
-        child.nextSibling = temp;
-        temp->prevSibling = &child;
+        struct PCB* temp = parent->child;
+        parent->child = child;
+        child->nextSibling = temp;
+        temp->prevSibling = child;
     }
 } 
 
@@ -140,6 +141,7 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     child.child = NULL;
     child.nextSibling = NULL;
     child.prevSibling = NULL;
+    child.stack = stack;
     child.filled = 1;
     lastAssignedPid = pid;
 
@@ -154,44 +156,64 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     }
 
     processTable[pid % MAXPROC] = child; 
+    addChildToParent(&processTable[currentProcess % MAXPROC], &processTable[pid % MAXPROC]);
+    
     numProcesses++;
-    addChildToParent(processTable[currentProcess % MAXPROC], child);
     return pid;
 }
 
+int getTerminatedChild(struct PCB *process){
+    struct PCB *rootChild = process->child;
+    
+    struct PCB* temp = rootChild;
+    while (temp != NULL) {
+        if (temp->terminated == 1) {
+            break;
+        }
+        temp = temp->nextSibling;
+    }
+    return temp->pid;
+}
+
+void removeChildFromParent(struct PCB *child, struct PCB *parent) {
+    if (child->prevSibling == NULL && child->nextSibling != NULL) {
+        parent->child = child->nextSibling; // remove child from head of list
+        parent->child->prevSibling = NULL;
+    }
+    else if (child->prevSibling == NULL && child->nextSibling == NULL) {
+        parent->child = NULL;
+    }
+    else {
+        // remove child from list using prevSibling
+        struct PCB* temp = child->prevSibling;
+        temp->nextSibling = child->nextSibling;
+        if (temp->nextSibling != NULL) {
+            temp->nextSibling->prevSibling = temp; 
+        }
+    }
+}
+
 int join(int *status) {
-    if (processTable[currentProcess].child == NULL){
+    if (processTable[currentProcess % MAXPROC].child == NULL){
 	return -2;
     }
-    int childPid = childStatus(processTable[currentProcess].child, 0);
-    status = processTable[childPid].status;
-    //free stack of child, not sure if this is the correct way to access this
-    //free(&processTable[childPid].context);
-    //free(&processTable[childPid]);
-    struct PCB empty; //not sure how to free the stack of the child, doing this for now
-    processTable[childPid] = empty;
+    int childPid = getTerminatedChild(&processTable[currentProcess % MAXPROC]);
+    // set out-value of status via pointer
+    *status = processTable[childPid % MAXPROC].status;
+
+    // free stack of child
+    free(processTable[childPid % MAXPROC].stack);
+    processTable[childPid % MAXPROC].filled = 0; // set PCB entry to free
+    
+    removeChildFromParent(&processTable[childPid % MAXPROC], 
+        &processTable[currentProcess % MAXPROC]);
     numProcesses--;
     return childPid;
 }
 
-int childStatus(struct PCB rootChild, int status){
-    if (rootChild.nextSibling == NULL || rootChild.prevSibling == NULL){
-	return status;
-    }
-    if (rootChild.terminated == 1){
-	status = rootChild.pid;
-	return status;
-    }
-    childStatus(*rootChild.nextSibling, status);
-    childStatus(*rootChild.prevSibling, status);
-    return status;
-}
-
 void quit(int status, int switchToPid) {
-    struct PCB process = processTable[currentProcess % MAXPROC];
-    process.status = status;
-    process.terminated = 1;
-    
+    processTable[currentProcess % MAXPROC].status = status;
+    processTable[currentProcess % MAXPROC].terminated = 1;    
     TEMP_switchTo(switchToPid); 
 }
 
