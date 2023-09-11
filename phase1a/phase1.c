@@ -156,27 +156,16 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     }
 
     processTable[pid % MAXPROC] = child; 
+    addChildToParent(&processTable[currentProcess % MAXPROC], &processTable[pid % MAXPROC]);
     
-    // add as child to parent
-    if (processTable[currentProcess % MAXPROC].child == NULL) {
-        processTable[currentProcess % MAXPROC].child = &processTable[pid % MAXPROC];
-    }
-    else {
-        struct PCB *temp = processTable[currentProcess % MAXPROC].child;
-        processTable[currentProcess % MAXPROC].child = &processTable[pid % MAXPROC];
-        child.nextSibling = temp;
-        temp->prevSibling = &processTable[pid % MAXPROC];
-    }
     numProcesses++;
     return pid;
 }
 
 int getTerminatedChild(struct PCB *process){
-    struct PCB rootChild = *(process->child);
-    if (rootChild.nextSibling == NULL && rootChild.terminated == 1){
-	return rootChild.pid;
-    }
-    struct PCB* temp = rootChild.nextSibling;
+    struct PCB *rootChild = process->child;
+    
+    struct PCB* temp = rootChild;
     while (temp != NULL) {
         if (temp->terminated == 1) {
             break;
@@ -187,13 +176,20 @@ int getTerminatedChild(struct PCB *process){
 }
 
 void removeChildFromParent(struct PCB *child, struct PCB *parent) {
-    if (child->prevSibling == NULL) {
+    if (child->prevSibling == NULL && child->nextSibling != NULL) {
         parent->child = child->nextSibling; // remove child from head of list
+        parent->child->prevSibling = NULL;
+    }
+    else if (child->prevSibling == NULL && child->nextSibling == NULL) {
+        parent->child = NULL;
     }
     else {
         // remove child from list using prevSibling
         struct PCB* temp = child->prevSibling;
-        temp->nextSibling = child->nextSibling; 
+        temp->nextSibling = child->nextSibling;
+        if (temp->nextSibling != NULL) {
+            temp->nextSibling->prevSibling = temp; 
+        }
     }
 }
 
@@ -208,8 +204,9 @@ int join(int *status) {
     // free stack of child
     free(processTable[childPid % MAXPROC].stack);
     processTable[childPid % MAXPROC].filled = 0; // set PCB entry to free
-    removeChildFromParent(&processTable[childPid % MAXPROC], &processTable[currentProcess % MAXPROC]);
-
+    
+    removeChildFromParent(&processTable[childPid % MAXPROC], 
+        &processTable[currentProcess % MAXPROC]);
     numProcesses--;
     return childPid;
 }
