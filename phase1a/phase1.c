@@ -119,7 +119,6 @@ void phase1_init(void) {
     int pid = 1;
     struct PCB init;
     void *stack = &initStack;
-    //void *stack = malloc(USLOSS_MIN_STACK);
     init.pid = pid;
     strcpy(init.name, "init");
     init.priority = 6;
