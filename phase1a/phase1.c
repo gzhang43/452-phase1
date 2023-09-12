@@ -29,6 +29,7 @@ struct PCB processTable[MAXPROC+1];
 int lastAssignedPid;
 int currentProcess;
 int numProcesses;
+static char initStack[4*USLOSS_MIN_STACK];
 
 unsigned int disableInterrupts() {
     unsigned int psr = USLOSS_PsrGet();
@@ -117,7 +118,8 @@ void phase1_init(void) {
     
     int pid = 1;
     struct PCB init;
-    void *stack = malloc(USLOSS_MIN_STACK);
+    void *stack = &initStack;
+    //void *stack = malloc(USLOSS_MIN_STACK);
     init.pid = pid;
     strcpy(init.name, "init");
     init.priority = 6;
@@ -304,7 +306,7 @@ void quit(int status, int switchToPid) {
     TEMP_switchTo(switchToPid); 
 }
 
-//Returns the pid of the current running process
+// Returns the pid of the current running process
 int getpid(void) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
