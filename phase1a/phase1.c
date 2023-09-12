@@ -6,14 +6,14 @@
 
 void printStatus(int pid);
 
-//PCB Struct definition
+// PCB struct definition
 typedef struct PCB {
     USLOSS_Context context;
     int pid;
     char name[MAXNAME];
     int priority;
     int status;
-    int terminated; // 1 = yes, 0 = no
+    int terminated; // 1 = terminated, 0 = alive
     int(*startFunc)(char*);
     char *arg;
     struct PCB* parent;
@@ -29,6 +29,32 @@ struct PCB processTable[MAXPROC+1];
 int lastAssignedPid;
 int currentProcess;
 int numProcesses;
+
+unsigned int disableInterrupts() {
+    unsigned int psr = USLOSS_PsrGet();
+    int result = USLOSS_PsrSet(USLOSS_PsrGet() & ~2);
+    if (result == 1) {
+        USLOSS_Console("Error: invalid PSR value for set.\n");
+        USLOSS_Halt(1);
+    }
+    return psr;
+}
+
+void restoreInterrupts(int savedPsr) {
+    int result = USLOSS_PsrSet(savedPsr);
+    if (result == 1) {
+        USLOSS_Console("Error: invalid PSR value for set.\n");
+        USLOSS_Halt(1);
+    } 
+}
+
+void enableInterrupts() {
+    int result = USLOSS_PsrSet(USLOSS_PsrGet() | 2);
+    if (result == 1) {
+        USLOSS_Console("Error: invalid PSR value for set.\n");
+        USLOSS_Halt(1);
+    } 
+}
 
 void sentinel(void) {
     // If rightmost bit is set to 0, then Psr will be an even int
@@ -47,12 +73,14 @@ void sentinel(void) {
 
 void launchFunc(void) {
     struct PCB process = processTable[currentProcess % MAXPROC];
+    enableInterrupts();
     int ret = process.startFunc(process.arg);
     USLOSS_Console("Error: User function returned.\n");
     USLOSS_Halt(1);
 }
 
 void launchTestCaseMain(void) {
+    enableInterrupts();
     int ret = (*testcase_main)();
     USLOSS_Console("Test case main function returned.\n");
     USLOSS_Halt(0);
@@ -63,6 +91,7 @@ void init_main(void) {
         USLOSS_Console("Process is not in kernel mode.\n");
         USLOSS_Halt(1);
     }
+    disableInterrupts(); 
     phase2_start_service_processes();
     phase3_start_service_processes();
     phase4_start_service_processes();
@@ -71,7 +100,7 @@ void init_main(void) {
     fork1("testcase_main", NULL, NULL, USLOSS_MIN_STACK, 3); 
     fork1("sentinel", NULL, NULL, USLOSS_MIN_STACK, 7);
     currentProcess = 2;
-    USLOSS_ContextSwitch(&processTable[1].context, &processTable[2].context);    
+    USLOSS_ContextSwitch(&processTable[1].context, &processTable[2].context); 
 }
 
 // Initialize data structures including process table entry for init
@@ -80,10 +109,12 @@ void phase1_init(void) {
         USLOSS_Console("Process is not in kernel mode.\n");
         USLOSS_Halt(1);
     }
+    int savedPsr = disableInterrupts();
+    
     for (int i = 0; i < MAXPROC; i++) {
         processTable[i].filled = 0;
     }
-
+    
     int pid = 1;
     struct PCB init;
     void *stack = malloc(USLOSS_MIN_STACK);
@@ -95,6 +126,7 @@ void phase1_init(void) {
     USLOSS_ContextInit(&init.context, stack, USLOSS_MIN_STACK, NULL, init_main);
     processTable[pid] = init;
     lastAssignedPid = 1;
+    restoreInterrupts(savedPsr);
 }
 
 void startProcesses(void) {
@@ -102,6 +134,8 @@ void startProcesses(void) {
         USLOSS_Console("Process is not in kernel mode.\n");
         USLOSS_Halt(1);
     }
+    disableInterrupts(); 
+    
     USLOSS_Context *old = NULL;
     numProcesses++;
     currentProcess = 1;
@@ -112,7 +146,9 @@ bool hasEmptySlots() {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
         USLOSS_Halt(1);
-    }
+    } 
+    int savedPsr = disableInterrupts(); 
+    restoreInterrupts(savedPsr);
     return numProcesses < MAXPROC;
 }
 
@@ -145,7 +181,9 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
         USLOSS_Halt(1);
-    }
+    } 
+    int savedPsr = disableInterrupts(); 
+    
     if (stacksize < USLOSS_MIN_STACK) {
         return -2;
     }
@@ -191,6 +229,7 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     addChildToParent(&processTable[currentProcess % MAXPROC], &processTable[pid % MAXPROC]);
     
     numProcesses++;
+    restoreInterrupts(savedPsr);
     return pid;
 }
 
@@ -230,6 +269,8 @@ int join(int *status) {
         USLOSS_Console("Process is not in kernel mode.\n");
         USLOSS_Halt(1);
     }
+    int savedPsr = disableInterrupts(); 
+    
     if (processTable[currentProcess % MAXPROC].child == NULL){
 	return -2;
     }
@@ -244,12 +285,18 @@ int join(int *status) {
     removeChildFromParent(&processTable[childPid % MAXPROC], 
         &processTable[currentProcess % MAXPROC]);
     numProcesses--;
+    restoreInterrupts(savedPsr);
     return childPid;
 }
 
 void quit(int status, int switchToPid) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
+    disableInterrupts(); 
+    if (processTable[currentProcess % MAXPROC].child != NULL) {
+        USLOSS_Console("Error: Process with children cannot be quit.\n");
         USLOSS_Halt(1);
     }
     processTable[currentProcess % MAXPROC].status = status;
@@ -263,25 +310,28 @@ int getpid(void) {
         USLOSS_Console("Process is not in kernel mode.\n");
         USLOSS_Halt(1);
     }
+    int savedPsr = disableInterrupts(); 
+    restoreInterrupts(savedPsr);
     return currentProcess;
 }
 
 /**
 Prints out the following information about the processes in the PCB table.
-PID
-Parent PID (if any)
-Child PID (if any)
-Next Sibling PID (if any)
-Prev Sibling PID (if any)
-Name of the process
-Priority
-State of the process
+    PID
+    Parent PID (if any)
+    Child PID (if any)
+    Next Sibling PID (if any)
+    Prev Sibling PID (if any)
+    Name of the process
+    Priority
+    State of the process
 **/
 void dumpProcesses(void) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
         USLOSS_Halt(1);
     }
+    int savedPsr = disableInterrupts(); 
     USLOSS_Console("PID PPID CPID NSPID PSPID NAME              PRIORITY STATE\n");
     int i = 0;
     while (i < MAXPROC){
@@ -310,16 +360,19 @@ void dumpProcesses(void) {
 	}
 	i++;
     }
+    restoreInterrupts(savedPsr);
 }
 
-/**
+/*
 Using the status field of the PCB struct, determines the state of a process
-with the given parameter pid. If the pid is the pid of the current process, the
-status is "Running"
-If status > 0 and the terminated field is 1, then the process has terminated and prints
-with its status number. If terminated is not 0, then the process is "Blocked".
-If the status is 0, then the process is "Runnable"
-**/
+with the given parameter pid.
+ 
+If the pid is the pid of the current process, the status is "Running."
+If status > 0 and the terminated field is 1, then the process has 
+terminated and prints with its status number. If terminated is not 0, 
+then the process is "Blocked." If the status is 0, then the process is 
+"Runnable."
+*/
 void printStatus(int pid){
     if (pid == currentProcess){
 	USLOSS_Console("Running");
@@ -339,17 +392,19 @@ void printStatus(int pid){
 }
 
 /*
-Parameters:
-	int pid: Integer representing the pid of the process to switch to
+A temporary function to manually switch from the current process to another 
+given process. The state of the current process is saved before context 
+switching to the new process.
 
-A temporary function to manually switch from the current process to another given process
-The state of the current process is saved before context switching to the new process.
+Parameters:
+    int pid: Integer representing the pid of the process to switch to
 */
 void TEMP_switchTo(int pid) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
         USLOSS_Halt(1);
     }
+    disableInterrupts(); 
     USLOSS_Context *old = &processTable[currentProcess % MAXPROC].context;
     currentProcess = pid;
     USLOSS_ContextSwitch(old, &processTable[pid % MAXPROC].context);
