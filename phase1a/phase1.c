@@ -129,7 +129,8 @@ simulation if testcase_main returns.
 void launchTestCaseMain(void) {
     enableInterrupts();
     int ret = (*testcase_main)();
-    USLOSS_Console("Test case main function returned.\n");
+    USLOSS_Console("Phase 1A TEMPORARY HACK: testcase_main() returned, ");
+    USLOSS_Console("simulation will now halt.\n");
     USLOSS_Halt(0);
 }
 
@@ -148,10 +149,12 @@ void init_main(void) {
     phase4_start_service_processes();
     phase5_start_service_processes();
 
-    fork1("testcase_main", NULL, NULL, USLOSS_MIN_STACK, 3); 
     fork1("sentinel", NULL, NULL, USLOSS_MIN_STACK, 7);
-    currentProcess = 2;
-    USLOSS_ContextSwitch(&processTable[1].context, &processTable[2].context); 
+    fork1("testcase_main", NULL, NULL, USLOSS_MIN_STACK, 3); 
+    currentProcess = 3;
+    USLOSS_Console("Phase 1A TEMPORARY HACK: init() manually switching to "); 
+    USLOSS_Console("testcase_main() after using fork1() to create it.\n");
+    USLOSS_ContextSwitch(&processTable[1].context, &processTable[3].context); 
 }
 
 /*
@@ -264,7 +267,7 @@ function), or the name is too long.
 int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
         int priority) {
     if (USLOSS_PsrGet() % 2 == 0) {
-        USLOSS_Console("Error: Attempt to call fork1 while in user mode.\n");
+        USLOSS_Console("ERROR: Someone attempted to call fork1 while in user mode!\n");
         USLOSS_Halt(1);
     } 
     int savedPsr = disableInterrupts(); 
@@ -419,12 +422,13 @@ Returns: status - the exit status of the quit process
 */
 void quit(int status, int switchToPid) {
     if (USLOSS_PsrGet() % 2 == 0) {
-        USLOSS_Console("Error: Attempt to call quit while in user mode.\n");
+        USLOSS_Console("ERROR: Someone attempted to call quit while in user mode!\n");
         USLOSS_Halt(1);
     }
     disableInterrupts(); 
     if (processTable[currentProcess % MAXPROC].child != NULL) {
-        USLOSS_Console("Error: Process with children cannot be quit.\n");
+        USLOSS_Console("ERROR: Process pid %d called quit() ", currentProcess);
+        USLOSS_Console("while it still had children.\n");
         USLOSS_Halt(1);
     }
     processTable[currentProcess % MAXPROC].status = status;
