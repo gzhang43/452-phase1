@@ -1,3 +1,19 @@
+/*
+Assignment: Phase1a
+Group: Grace Zhang and Ellie Martin
+Course: CSC 452 (Operating Systems)
+Instructors: Russell Lewis and Ben Dicken
+Due Date: 9/13/23
+
+Description: Code for phase1a of our operating systems kernel that implements
+a library for handling processes. Currently contains functions to create processes,
+store processes, quit processes and collect them, and to switch between processes.
+
+To compile and run: 
+make
+./run_testcases.student
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -27,10 +43,14 @@ typedef struct PCB {
 struct PCB processTable[MAXPROC+1];
 
 int lastAssignedPid;
-int currentProcess;
+int currentProcess; // the pid of the currently running process
 int numProcesses;
-static char initStack[4*USLOSS_MIN_STACK];
+static char initStack[4*USLOSS_MIN_STACK]; // the stack for the init process
 
+/*
+Disables interrupts in the simulation by setting the corresponding bit
+in the PSR to 0.
+*/
 unsigned int disableInterrupts() {
     unsigned int psr = USLOSS_PsrGet();
     int result = USLOSS_PsrSet(USLOSS_PsrGet() & ~2);
@@ -41,6 +61,13 @@ unsigned int disableInterrupts() {
     return psr;
 }
 
+/*
+Restores interrupts in the simulation by setting the PSR to the saved
+PSR value.
+
+Parameters:
+    savedPsr - the saved PSR value
+*/
 void restoreInterrupts(int savedPsr) {
     int result = USLOSS_PsrSet(savedPsr);
     if (result == 1) {
@@ -49,6 +76,10 @@ void restoreInterrupts(int savedPsr) {
     } 
 }
 
+/*
+Enables interrupts in the simulation by setting the corresponding
+PSR bit to 1.
+*/
 void enableInterrupts() {
     int result = USLOSS_PsrSet(USLOSS_PsrGet() | 2);
     if (result == 1) {
@@ -57,6 +88,12 @@ void enableInterrupts() {
     } 
 }
 
+/*
+A function that checks if there is deadlock in the simulation. Runs at 
+the lowest priority, so sentinel is only started when all other processes
+are blocked. If the blocking is not caused by device drivers, then deadlock
+is reported and the simulation is terminated.
+*/
 void sentinel(void) {
     // If rightmost bit is set to 0, then Psr will be an even int
     if (USLOSS_PsrGet() % 2 == 0) {
@@ -72,6 +109,11 @@ void sentinel(void) {
     }
 }
 
+/*
+Launcher/trampoline function for user processes. Calls the associated
+function using the stored function pointer, and terminates the simulation
+with an error if the user function returns.
+*/
 void launchFunc(void) {
     struct PCB process = processTable[currentProcess % MAXPROC];
     enableInterrupts();
@@ -80,6 +122,10 @@ void launchFunc(void) {
     USLOSS_Halt(1);
 }
 
+/*
+Launcher/trampoline function that calls testcase_main. Terminates the 
+simulation if testcase_main returns.
+*/
 void launchTestCaseMain(void) {
     enableInterrupts();
     int ret = (*testcase_main)();
@@ -87,6 +133,10 @@ void launchTestCaseMain(void) {
     USLOSS_Halt(0);
 }
 
+/*
+Calls start_service_processes for each of the other four phases, and 
+creates the sentinel and testcase_main processes using fork1.
+*/
 void init_main(void) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
@@ -104,7 +154,10 @@ void init_main(void) {
     USLOSS_ContextSwitch(&processTable[1].context, &processTable[2].context); 
 }
 
-// Initialize data structures including process table entry for init
+/*
+Initialize data structures for the program, like the process table, and
+create an entry for the process init from the function init_main.
+*/
 void phase1_init(void) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
@@ -130,6 +183,9 @@ void phase1_init(void) {
     restoreInterrupts(savedPsr);
 }
 
+/*
+Function to start/switch to the init process.
+*/
 void startProcesses(void) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
@@ -143,16 +199,18 @@ void startProcesses(void) {
     USLOSS_ContextSwitch(old, &processTable[1].context);
 }
 
+/*
+Returns true if the process table currently has empty slots and false otherwise.
+Used by fork1. 
+*/
 bool hasEmptySlots() {
-    if (USLOSS_PsrGet() % 2 == 0) {
-        USLOSS_Console("Process is not in kernel mode.\n");
-        USLOSS_Halt(1);
-    } 
-    int savedPsr = disableInterrupts(); 
-    restoreInterrupts(savedPsr);
     return numProcesses < MAXPROC;
 }
 
+/*
+Returns the next available pid depending on which slots in the process table
+are filled because indexing into the table is done by pid % (table size).
+*/
 int getNextPid() {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
@@ -165,6 +223,14 @@ int getNextPid() {
     return nextPid;
 }
 
+/*
+Adds the given child process to the given parent process's list of 
+children.
+
+Parameters:
+    parent - a PCB struct pointer to the parent process's PCB
+    child - a PCB struct pointer to the child process's PCB
+*/
 void addChildToParent(struct PCB *parent, struct PCB *child) {
     if (parent->child == NULL) {
         parent->child = child;
@@ -177,10 +243,28 @@ void addChildToParent(struct PCB *parent, struct PCB *child) {
     }
 } 
 
+/*
+Creates a child process of the current process. A PCB entry is created for the
+child process with initial information and stored in the process table. The
+child process is also added to the current process's list of children.
+
+Parameters:
+    name - the name of the process to create; must be under MAXNAME chars
+    func - a function pointer to the function of the process to create
+    arg - the argument, if any, for the process's function
+    stacksize - the size of the stack to be allocated to the process;
+                must be at least USLOSS_MIN_STACK
+    priority - the priority of the process to create
+
+Returns: -2 if stacksize < USLOSS_MIN_STACK; -1 if there are no empty slots in
+the process table, the priority is out of range, the startFunc or name are NULL
+(exception for function pointer of testcase_main to signal use of special launch
+function), or the name is too long.
+*/
 int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
         int priority) {
     if (USLOSS_PsrGet() % 2 == 0) {
-        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Console("Error: Attempt to call fork1 while in user mode.\n");
         USLOSS_Halt(1);
     } 
     int savedPsr = disableInterrupts(); 
@@ -215,7 +299,8 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     child.stack = stack;
     child.filled = 1;
     lastAssignedPid = pid;
-
+    
+    // Cases for if process is being created from testcase_main or sentinel
     if (strcmp(name, "testcase_main") == 0) {
         USLOSS_ContextInit(&child.context, stack, stacksize, NULL, launchTestCaseMain);
     }
@@ -227,13 +312,24 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     }
 
     processTable[pid % MAXPROC] = child; 
-    addChildToParent(&processTable[currentProcess % MAXPROC], &processTable[pid % MAXPROC]);
+    addChildToParent(&processTable[currentProcess % MAXPROC],
+        &processTable[pid % MAXPROC]);
     
     numProcesses++;
     restoreInterrupts(savedPsr);
     return pid;
 }
 
+/*
+Helper function for join to get the pid of a terminated child given a process
+PCB. Returns the pid of the first child encountered in the linked list.
+
+Parameters:
+    process - the PCB struct pointer of the parent process whose list of 
+              children we are searching
+
+Returns: the pid of a terminated child process
+*/
 int getTerminatedChild(struct PCB *process){
     struct PCB *rootChild = process->child;
     
@@ -247,6 +343,14 @@ int getTerminatedChild(struct PCB *process){
     return temp->pid;
 }
 
+/*
+Helper function for join to remove a dead child from its parent's list
+of children. 
+
+Parameters:
+    child - a PCB struct pointer to the child PCB to remove
+    parent - a PCB struct pointer to the parent PCB
+*/
 void removeChildFromParent(struct PCB *child, struct PCB *parent) {
     if (child->prevSibling == NULL && child->nextSibling != NULL) {
         parent->child = child->nextSibling; // remove child from head of list
@@ -265,6 +369,19 @@ void removeChildFromParent(struct PCB *child, struct PCB *parent) {
     }
 }
 
+/*
+Collects a dead child of the current process. If the process
+does not have any children, returns -2. The stack of the 
+collected process is freed, and its entry in the process
+table is also marked as empty.
+
+Parameters:
+    status - an out pointer filled with the status of the 
+             dead child process joined-to
+
+Returns: -2 if process has no children, or the pid of the
+         child joined-to
+*/
 int join(int *status) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
@@ -290,9 +407,19 @@ int join(int *status) {
     return childPid;
 }
 
+/*
+Terminates the current process by marking the process so that it 
+cannot be switched to, and switches to the process with the given
+pid. 
+
+Parameters:
+    switchToPid - the pid of the process to switch to
+
+Returns: status - the exit status of the quit process
+*/
 void quit(int status, int switchToPid) {
     if (USLOSS_PsrGet() % 2 == 0) {
-        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Console("Error: Attempt to call quit while in user mode.\n");
         USLOSS_Halt(1);
     }
     disableInterrupts(); 
@@ -305,7 +432,9 @@ void quit(int status, int switchToPid) {
     TEMP_switchTo(switchToPid); 
 }
 
-// Returns the pid of the current running process
+/*
+Returns the pid of the current running process.
+*/
 int getpid(void) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
@@ -316,8 +445,8 @@ int getpid(void) {
     return currentProcess;
 }
 
-/**
-Prints out the following information about the processes in the PCB table.
+/*
+Prints out the following information about the processes in the PCB table:
     PID
     Parent PID (if any)
     Child PID (if any)
@@ -326,7 +455,7 @@ Prints out the following information about the processes in the PCB table.
     Name of the process
     Priority
     State of the process
-**/
+*/
 void dumpProcesses(void) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
@@ -398,7 +527,7 @@ given process. The state of the current process is saved before context
 switching to the new process.
 
 Parameters:
-    int pid: Integer representing the pid of the process to switch to
+    int pid - integer representing the pid of the process to switch to
 */
 void TEMP_switchTo(int pid) {
     if (USLOSS_PsrGet() % 2 == 0) {
