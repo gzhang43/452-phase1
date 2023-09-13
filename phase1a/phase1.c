@@ -452,10 +452,7 @@ int getpid(void) {
 /*
 Prints out the following information about the processes in the PCB table:
     PID
-    Parent PID (if any)
-    Child PID (if any)
-    Next Sibling PID (if any)
-    Prev Sibling PID (if any)
+    Parent PID
     Name of the process
     Priority
     State of the process
