@@ -466,29 +466,18 @@ void dumpProcesses(void) {
         USLOSS_Halt(1);
     }
     int savedPsr = disableInterrupts(); 
-    USLOSS_Console("PID PPID CPID NSPID PSPID NAME              PRIORITY STATE\n");
+    USLOSS_Console(" PID  PPID  %-16s  PRIORITY  STATE\n", "NAME");
     int i = 0;
     while (i < MAXPROC){
 	if (processTable[i].filled == 1){
-	    USLOSS_Console("%*d ", -3,  processTable[i].pid);
+	    USLOSS_Console("%4d  ", processTable[i].pid);
 	    if (processTable[i].parent != NULL){
-		USLOSS_Console("%*d ", -4, processTable[i].parent->pid);
-	    } else {USLOSS_Console("null ");
-		}
-	    if (processTable[i].child != NULL){
-		USLOSS_Console("%*d ", -4, processTable[i].child->pid);
-	    } else {USLOSS_Console("null ");
-		}
-	    if (processTable[i].nextSibling != NULL){
-		USLOSS_Console("%*d ", -5, processTable[i].nextSibling->pid);
-	    } else {USLOSS_Console("null  ");
-		}
-	    if (processTable[i].prevSibling != NULL){
-		USLOSS_Console("%*d ", -5, processTable[i].prevSibling->pid);
-	    } else {USLOSS_Console("null  ");
-		}
-	    USLOSS_Console("%*s", -18, processTable[i].name);
-	    USLOSS_Console("%*d  ", 8, processTable[i].priority);
+		USLOSS_Console("%4d  ", processTable[i].parent->pid);
+	    } else {
+                USLOSS_Console("%4d  ", 0);
+            }
+	    USLOSS_Console("%-16s  ", processTable[i].name);
+	    USLOSS_Console("%-8d  ", processTable[i].priority);
 	    printStatus(i);
 	    USLOSS_Console("\n");
 	}
