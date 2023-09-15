@@ -18,6 +18,7 @@ make
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
+#include <assert.h>
 #include "phase1.h"
 
 void printStatus(int pid);
@@ -30,17 +31,25 @@ typedef struct PCB {
     int priority;
     int status;
     int terminated; // 1 = terminated, 0 = alive
+    int isZapped; // 1 = zapped, 0 = not zapped
+    int isBlocked; // 1 = blocked, 0 = not blocked
+    struct PCB* zappingProcesses; // list of processes zapping this one
     int(*startFunc)(char*);
     char *arg;
     struct PCB* parent;
     struct PCB* child;
     struct PCB* nextSibling;   
     struct PCB* prevSibling;
+    struct PCB* nextInQueue;
+    struct PCB* prevInQueue;
     void *stack;
+    int curStartTime;
+    int totalTime;
     int filled; // if this pcb is in use by a process
 } PCB;
 
 struct PCB processTable[MAXPROC+1];
+struct PCB *runQueues[8];
 
 int lastAssignedPid;
 int currentProcess; // the pid of the currently running process
@@ -244,7 +253,22 @@ void addChildToParent(struct PCB *parent, struct PCB *child) {
         child->nextSibling = temp;
         temp->prevSibling = child;
     }
+}
+
+void addProcessToEndOfQueue(int pid) {
+    struct PCB *process = &processTable[pid % MAXPROC];
+    int priority = process->priority;
+    
+    struct PCB *temp = runQueues[priority];
+    while (temp->nextInQueue != NULL) {
+        temp = temp->nextInQueue;
+    }
+    temp->nextInQueue = process;
 } 
+
+void removeProcessFromQueue(int pid) {
+
+}
 
 /*
 Creates a child process of the current process. A PCB entry is created for the
@@ -420,7 +444,7 @@ Parameters:
 
 Returns: status - the exit status of the quit process
 */
-void quit(int status, int switchToPid) {
+void quit(int status) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("ERROR: Someone attempted to call quit while in user mode!\n");
         USLOSS_Halt(1);
@@ -433,7 +457,6 @@ void quit(int status, int switchToPid) {
     }
     processTable[currentProcess % MAXPROC].status = status;
     processTable[currentProcess % MAXPROC].terminated = 1;    
-    TEMP_switchTo(switchToPid); 
 }
 
 /*
@@ -530,44 +553,37 @@ void printStatus(int pid) {
 }
 
 /*
-A temporary function to manually switch from the current process to another 
-given process. The state of the current process is saved before context 
-switching to the new process.
-
-Parameters:
-    int pid - integer representing the pid of the process to switch to
+Code from Phase 1B spec.
 */
-void TEMP_switchTo(int pid) {
-    if (USLOSS_PsrGet() % 2 == 0) {
-        USLOSS_Console("Process is not in kernel mode.\n");
-        USLOSS_Halt(1);
-    }
-    disableInterrupts(); 
-    USLOSS_Context *old = &processTable[currentProcess % MAXPROC].context;
-    currentProcess = pid;
-    USLOSS_ContextSwitch(old, &processTable[pid % MAXPROC].context);
+int currentTime() {
+    int retval;
+    int usloss_rc = USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &retval);
+    assert(usloss_rc == USLOSS_DEV_OK);
+    return retval;
 }
 
-void zap(int pid){
+void updateTotalTime(void) {
 }
 
-int isZapped(void){
+void zap(int pid) {
 }
 
-void blockMe(int newStatus){
+int isZapped(void) {
+} 
+
+void blockMe(int newStatus) {
 }
 
-int unblockProc(int pid){
+int unblockProc(int pid) {
 }
 
-int readCurStartTime(void){
+int readCurStartTime(void) {
+    return processTable[currentProcess % MAXPROC].curStartTime;
 }
 
-int currentTime(void){
+int readtime(void) { 
+    
 }
 
-int readtime(void){
-}
-
-void timeSlice(void){
+void timeSlice(void) {
 }
