@@ -574,6 +574,23 @@ int currentTime() {
     return retval;
 }
 
+void runDispatcher() {
+    // TODO: Add in checks for whether to remove completely or put process at end
+    // of queue
+
+    // Get the priority of the process to run next
+    int i = 1;
+    while (i <= 7) {
+        if (runQueues[i] != NULL) {
+            break;
+        }
+        i++;
+    }
+    USLOSS_Context *old = &processTable[currentProcess % MAXPROC].context;
+    currentProcess = runQueues[i]->pid;
+    USLOSS_ContextSwitch(old, &processTable[currentProcess % MAXPROC].context);
+}
+
 void updateTotalTime(void) {
 }
 
