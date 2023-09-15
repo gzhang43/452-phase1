@@ -267,7 +267,19 @@ void addProcessToEndOfQueue(int pid) {
 } 
 
 void removeProcessFromQueue(int pid) {
-
+    struct PCB *process = &processTable[pid % MAXPROC];
+    int priority = process->priority;
+    if (process->nextInQueue == NULL && process->prevInQueue != NULL){
+	process->prevInQueue->nextInQueue = NULL;
+    }
+    else if (process->nextInQueue != NULL && process->prevInQueue == NULL){
+	process->nextInQueue->prevInQueue = NULL;
+	runQueues[priority] = process->nextInQueue;
+    }
+    else {
+	process->prevInQueue->nextInQueue = process->nextInQueue;
+	process->nextInQueue->prevInQueue = process->prevInQueue;
+    }
 }
 
 /*
