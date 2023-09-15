@@ -548,3 +548,26 @@ void TEMP_switchTo(int pid) {
     USLOSS_ContextSwitch(old, &processTable[pid % MAXPROC].context);
 }
 
+void zap(int pid){
+}
+
+int isZapped(void){
+}
+
+void blockMe(int newStatus){
+}
+
+int unblockProc(int pid){
+}
+
+int readCurStartTime(void){
+}
+
+int currentTime(void){
+}
+
+int readtime(void){
+}
+
+void timeSlice(void){
+}
