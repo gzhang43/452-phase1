@@ -452,7 +452,7 @@ int getpid(void) {
 /*
 Prints out the following information about the processes in the PCB table:
     PID
-    Parent PID (if any)
+    Parent PID
     Child PID (if any)
     Next Sibling PID (if any)
     Prev Sibling PID (if any)
@@ -511,20 +511,20 @@ terminated and prints with its status number. If terminated is not 0,
 then the process is "Blocked." If the status is 0, then the process is 
 "Runnable."
 */
-void printStatus(int pid){
-    if (pid == currentProcess){
+void printStatus(int pid) {
+    if (pid == currentProcess) {
 	USLOSS_Console("Running");
 	return;
     }
-    if (processTable[pid].status > 0){
-	if (processTable[pid].terminated == 1){
+    if (processTable[pid].status > 0) {
+	if (processTable[pid].terminated == 1) {
 	    USLOSS_Console("Terminated(%d)", processTable[pid].status);
 	    return;
 	}
 	USLOSS_Console("Blocked");
 	return;
     }
-    if (processTable[pid].status == 0){
+    if (processTable[pid].status == 0) {
 	USLOSS_Console("Runnable");
     }
 }
