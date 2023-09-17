@@ -33,7 +33,8 @@ typedef struct PCB {
     int terminated; // 1 = terminated, 0 = alive
     int isZapped; // 1 = zapped, 0 = not zapped
     int isBlocked; // 1 = blocked, 0 = not blocked
-    struct PCB* zappingProcesses; // list of processes zapping this one
+    struct PCB* zappingProcesses[MAXPROC+1]; // list of processes zapping this one
+    int zapNum; //used for list indexing, number of processes zapping this one
     int(*startFunc)(char*);
     char *arg;
     struct PCB* parent;
@@ -329,6 +330,7 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     child.priority = priority;
     child.status = 0; // set status to ready
     child.terminated = 0;
+    child.zapNum = 0;
     child.startFunc = func;
     child.arg = arg;
     child.parent = &processTable[currentProcess]; 
@@ -595,9 +597,24 @@ void updateTotalTime(void) {
 }
 
 void zap(int pid) {
+    if ((pid == processTable[currentProcess % MAXPROC].pid) || (pid == 1) ){
+	//print error
+	USLOSS_Halt(1);
+    }
+    else if ((processTable[pid].terminated == 1) || (processTable[pid] == NULL)){
+	//print error
+	USLOSS_Halt(1);
+    }
+    else {
+	processTable[pid].isZapped = 1;
+	struct PCB* zapping = processTable[pid].zappingProcesses;
+	zapping[processTable[pid].zapNum] = processTable[currentProcess % MAXPROC];
+	processTable[pid].zapNum += 1;
+    }
 }
 
 int isZapped(void) {
+    return processTable[currentProcess % MAXPROC].isZapped;
 } 
 
 void blockMe(int newStatus) {
