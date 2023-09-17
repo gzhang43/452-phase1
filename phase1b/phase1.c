@@ -1,9 +1,9 @@
 /*
-Assignment: Phase1a
-Group: Grace Zhang and Ellie Martin
+Assignment: Phase 1B
+Group: Grace Zhang nd Ellie Martin
 Course: CSC 452 (Operating Systems)
 Instructors: Russell Lewis and Ben Dicken
-Due Date: 9/13/23
+Due Date: 9/25/23
 
 Description: Code for phase1a of our operating systems kernel that implements
 a library for handling processes. Currently contains functions to create processes,
@@ -21,6 +21,9 @@ make
 #include <assert.h>
 #include "phase1.h"
 
+void runDispatcher();
+void addProcessToEndOfQueue(int pid);
+void removeProcessFromQueue(int pid);
 void printStatus(int pid);
 
 // PCB struct definition
@@ -109,6 +112,7 @@ void sentinel(void) {
         USLOSS_Console("Process is not in kernel mode.\n");
         USLOSS_Halt(1);
     }
+   
     while (1) {
         if (phase2_check_io() == 0) {
             USLOSS_Console("Deadlock detected.\n");
@@ -138,9 +142,14 @@ simulation if testcase_main returns.
 void launchTestCaseMain(void) {
     enableInterrupts();
     int ret = (*testcase_main)();
-    USLOSS_Console("Phase 1A TEMPORARY HACK: testcase_main() returned, ");
-    USLOSS_Console("simulation will now halt.\n");
-    USLOSS_Halt(0);
+
+    if (ret == 0) {
+        USLOSS_Halt(0);
+    }
+    else {
+        USLOSS_Console("Some error was detected by the testcase.\n");
+        USLOSS_Halt(ret);
+    }
 }
 
 /*
@@ -152,7 +161,7 @@ void init_main(void) {
         USLOSS_Console("Process is not in kernel mode.\n");
         USLOSS_Halt(1);
     }
-    disableInterrupts(); 
+    int savedPsr = disableInterrupts(); 
     phase2_start_service_processes();
     phase3_start_service_processes();
     phase4_start_service_processes();
@@ -160,10 +169,11 @@ void init_main(void) {
 
     fork1("sentinel", NULL, NULL, USLOSS_MIN_STACK, 7);
     fork1("testcase_main", NULL, NULL, USLOSS_MIN_STACK, 3); 
-    currentProcess = 3;
-    USLOSS_Console("Phase 1A TEMPORARY HACK: init() manually switching to "); 
-    USLOSS_Console("testcase_main() after using fork1() to create it.\n");
-    USLOSS_ContextSwitch(&processTable[1].context, &processTable[3].context); 
+    
+    int status;
+    while (1) {
+        join(&status);
+    }
 }
 
 /*
@@ -175,11 +185,12 @@ void phase1_init(void) {
         USLOSS_Console("Process is not in kernel mode.\n");
         USLOSS_Halt(1);
     }
-    int savedPsr = disableInterrupts();
     
     for (int i = 0; i < MAXPROC; i++) {
         processTable[i].filled = 0;
     }
+    
+    currentProcess = 0;
     
     int pid = 1;
     struct PCB init;
@@ -187,12 +198,19 @@ void phase1_init(void) {
     init.pid = pid;
     strcpy(init.name, "init");
     init.priority = 6;
+    init.status = 0;
+    init.terminated = 0;
+    init.isZapped = 0;
+    init.isBlocked = 0;
+    init.prevInQueue = NULL;
+    init.nextInQueue = NULL;
     init.filled = 1;
 
     USLOSS_ContextInit(&init.context, stack, USLOSS_MIN_STACK, NULL, init_main);
     processTable[pid] = init;
     lastAssignedPid = 1;
-    restoreInterrupts(savedPsr);
+    numProcesses++;
+    addProcessToEndOfQueue(pid);
 }
 
 /*
@@ -204,11 +222,7 @@ void startProcesses(void) {
         USLOSS_Halt(1);
     }
     disableInterrupts(); 
-    
-    USLOSS_Context *old = NULL;
-    numProcesses++;
-    currentProcess = 1;
-    USLOSS_ContextSwitch(old, &processTable[1].context);
+    runDispatcher();
 }
 
 /*
@@ -259,6 +273,11 @@ void addProcessToEndOfQueue(int pid) {
     struct PCB *process = &processTable[pid % MAXPROC];
     int priority = process->priority;
     
+    if (runQueues[priority] == NULL) {
+        runQueues[priority] = process;
+        return;
+    }
+
     struct PCB *temp = runQueues[priority];
     while (temp->nextInQueue != NULL) {
         temp = temp->nextInQueue;
@@ -269,16 +288,20 @@ void addProcessToEndOfQueue(int pid) {
 void removeProcessFromQueue(int pid) {
     struct PCB *process = &processTable[pid % MAXPROC];
     int priority = process->priority;
-    if (process->nextInQueue == NULL && process->prevInQueue != NULL){
-	process->prevInQueue->nextInQueue = NULL;
-    }
-    else if (process->nextInQueue != NULL && process->prevInQueue == NULL){
-	process->nextInQueue->prevInQueue = NULL;
-	runQueues[priority] = process->nextInQueue;
-    }
-    else {
+
+    // If process is in middle of queue 
+    if (process->prevInQueue != NULL) {
 	process->prevInQueue->nextInQueue = process->nextInQueue;
-	process->nextInQueue->prevInQueue = process->prevInQueue;
+        if (process->nextInQueue != NULL) {
+            process->nextInQueue->prevInQueue = process->prevInQueue;
+        }
+    }
+    // If process is at head of queue
+    else {
+        if (process->nextInQueue != NULL) {
+	    process->nextInQueue->prevInQueue = NULL;
+	}
+        runQueues[priority] = process->nextInQueue;
     }
 }
 
@@ -335,6 +358,8 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     child.child = NULL;
     child.nextSibling = NULL;
     child.prevSibling = NULL;
+    child.prevInQueue = NULL;
+    child.nextInQueue = NULL;
     child.stack = stack;
     child.filled = 1;
     lastAssignedPid = pid;
@@ -355,6 +380,8 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
         &processTable[pid % MAXPROC]);
     
     numProcesses++;
+    addProcessToEndOfQueue(pid);
+    runDispatcher();
     restoreInterrupts(savedPsr);
     return pid;
 }
@@ -367,7 +394,7 @@ Parameters:
     process - the PCB struct pointer of the parent process whose list of 
               children we are searching
 
-Returns: the pid of a terminated child process
+Returns: the pid of a terminated child process, or -1 if not found
 */
 int getTerminatedChild(struct PCB *process){
     struct PCB *rootChild = process->child;
@@ -378,6 +405,11 @@ int getTerminatedChild(struct PCB *process){
             break;
         }
         temp = temp->nextSibling;
+    }
+   
+    // Return -1 if terminated child is not found
+    if (temp == NULL) {
+        return -1;
     }
     return temp->pid;
 }
@@ -432,6 +464,13 @@ int join(int *status) {
 	return -2;
     }
     int childPid = getTerminatedChild(&processTable[currentProcess % MAXPROC]);
+   
+    // If no children are terminated, then block and call dispatcher 
+    if (childPid == -1) {
+        processTable[currentProcess % MAXPROC].isBlocked = 1;
+        runDispatcher();
+    }
+
     // set out-value of status via pointer
     *status = processTable[childPid % MAXPROC].status;
 
@@ -461,7 +500,7 @@ void quit(int status) {
         USLOSS_Console("ERROR: Someone attempted to call quit while in user mode!\n");
         USLOSS_Halt(1);
     }
-    disableInterrupts(); 
+    int savedPsr = disableInterrupts(); 
     if (processTable[currentProcess % MAXPROC].child != NULL) {
         USLOSS_Console("ERROR: Process pid %d called quit() ", currentProcess);
         USLOSS_Console("while it still had children.\n");
@@ -469,6 +508,14 @@ void quit(int status) {
     }
     processTable[currentProcess % MAXPROC].status = status;
     processTable[currentProcess % MAXPROC].terminated = 1;    
+
+    // Unblock parent if it's waiting in join for a child to terminate    
+    if (processTable[currentProcess % MAXPROC].parent->isBlocked) {
+        unblockProc(processTable[currentProcess % MAXPROC].parent->pid);
+    }
+
+    runDispatcher();
+    restoreInterrupts(savedPsr);
 }
 
 /*
@@ -479,13 +526,11 @@ int getpid(void) {
         USLOSS_Console("Process is not in kernel mode.\n");
         USLOSS_Halt(1);
     }
-    int savedPsr = disableInterrupts(); 
-    restoreInterrupts(savedPsr);
     return currentProcess;
 }
 
 /*
-Prints out the following information about the processes in the PCB table:
+Prints out the following information about the processes in the table:
     PID
     Parent PID
     Child PID (if any)
@@ -509,7 +554,7 @@ void dumpProcesses(void) {
 	    if (processTable[i].parent != NULL) {
 		USLOSS_Console("%*d ", -4, processTable[i].parent->pid);
 	    } else {
-                USLOSS_Console("null ");
+                USLOSS_Console("0    ");
 	    }
 	    if (processTable[i].child != NULL) {
 		USLOSS_Console("%*d ", -4, processTable[i].child->pid);
@@ -537,7 +582,7 @@ void dumpProcesses(void) {
 }
 
 /*
-Using the status field of the PCB struct, determines the state of a process
+Using the status field of the PCB struct, prints the state of a process
 with the given parameter pid.
  
 If the pid is the pid of the current process, the status is "Running."
@@ -575,8 +620,15 @@ int currentTime() {
 }
 
 void runDispatcher() {
-    // TODO: Add in checks for whether to remove completely or put process at end
-    // of queue
+    if (currentProcess > 0) {
+        struct PCB *process = &processTable[currentProcess % MAXPROC];
+        removeProcessFromQueue(process->pid);
+        
+        // If process is blocked or terminated, then do not add back to queue
+        if (process->isBlocked == 0 && process->terminated == 0) {
+            addProcessToEndOfQueue(process->pid);
+        }
+    }
 
     // Get the priority of the process to run next
     int i = 1;
@@ -585,7 +637,13 @@ void runDispatcher() {
             break;
         }
         i++;
+    } 
+    // Return if current process is still the highest priority 
+    if (runQueues[i]->pid == currentProcess) {
+        return;   
     }
+
+    // USLOSS_Console("%s\n", runQueues[i]->name); 
     USLOSS_Context *old = &processTable[currentProcess % MAXPROC].context;
     currentProcess = runQueues[i]->pid;
     USLOSS_ContextSwitch(old, &processTable[currentProcess % MAXPROC].context);
@@ -604,6 +662,22 @@ void blockMe(int newStatus) {
 }
 
 int unblockProc(int pid) {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
+    int savedPsr = disableInterrupts(); 
+    
+    if (processTable[pid % MAXPROC].filled == 0 || processTable[pid % MAXPROC].isBlocked == 0 
+            || processTable[pid % MAXPROC].status <= 10) {
+       return -2;  
+    }
+    processTable[pid % MAXPROC].isBlocked = 0;
+    addProcessToEndOfQueue(pid);
+    runDispatcher();
+
+    restoreInterrupts(savedPsr);
+    return 0;
 }
 
 int readCurStartTime(void) {
