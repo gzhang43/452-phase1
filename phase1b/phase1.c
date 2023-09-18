@@ -33,8 +33,7 @@ typedef struct PCB {
     int terminated; // 1 = terminated, 0 = alive
     int isZapped; // 1 = zapped, 0 = not zapped
     int isBlocked; // 1 = blocked, 0 = not blocked
-    struct PCB* zappingProcesses[MAXPROC+1]; // list of processes zapping this one
-    int zapNum; //used for list indexing, number of processes zapping this one
+    struct PCB* zappingProcesses; // list of processes zapping this one
     int(*startFunc)(char*);
     char *arg;
     struct PCB* parent;
@@ -43,6 +42,8 @@ typedef struct PCB {
     struct PCB* prevSibling;
     struct PCB* nextInQueue;
     struct PCB* prevInQueue;
+    struct PCB* nextZapping;
+    struct PCB* prevZapping;
     void *stack;
     int curStartTime;
     int totalTime;
@@ -330,7 +331,6 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     child.priority = priority;
     child.status = 0; // set status to ready
     child.terminated = 0;
-    child.zapNum = 0;
     child.startFunc = func;
     child.arg = arg;
     child.parent = &processTable[currentProcess]; 
@@ -618,7 +618,7 @@ void zap(int pid) {
 	USLOSS_Halt(1);
     }
     else if ((processTable[pid].terminated == 1) || (processTable[pid].filled == 0)){
-	if (processTable[pid].filled = 0){
+	if (processTable[pid].filled == 0){
 	    USLOSS_Console("ERROR: Attempt to zap() a non-existent process.");
 	}
 	else {
@@ -629,8 +629,19 @@ void zap(int pid) {
     else {
 	processTable[pid].isZapped = 1;
 	struct PCB* zapping = processTable[pid].zappingProcesses;
-	zapping[processTable[pid].zapNum] = processTable[currentProcess % MAXPROC];
-	processTable[pid].zapNum += 1;
+	if (zapping == NULL){
+	    zapping = &processTable[currentProcess % MAXPROC];
+	}
+	else if (processTable[pid].nextZapping == NULL){
+	    processTable[pid].nextZapping = &processTable[currentProcess % MAXPROC];
+	}
+	else {
+	    struct PCB* zapChild = processTable[pid].nextZapping;
+	    while (zapChild->nextZapping != NULL){
+		zapChild = zapChild->nextZapping;
+	    }
+	    zapChild->nextZapping = &processTable[currentProcess % MAXPROC];
+	}
     }
 
     restoreInterrupts(savedPsr);
