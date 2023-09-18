@@ -617,8 +617,8 @@ void zap(int pid) {
 	}
 	USLOSS_Halt(1);
     }
-    else if ((processTable[pid].terminated == 1) || (processTable[pid] == NULL)){
-	if (processTable[pid] == NULL){
+    else if ((processTable[pid].terminated == 1) || (processTable[pid].filled == 0)){
+	if (processTable[pid].filled = 0){
 	    USLOSS_Console("ERROR: Attempt to zap() a non-existent process.");
 	}
 	else {
