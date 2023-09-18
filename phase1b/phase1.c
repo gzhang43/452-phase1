@@ -23,6 +23,7 @@ make
 
 #define DEBUG_MODE 0
 
+static void clockHandler(int dev,void *arg);
 void runDispatcher();
 void addProcessToEndOfQueue(int pid);
 void removeProcessFromQueue(int pid);
@@ -187,11 +188,14 @@ void phase1_init(void) {
         USLOSS_Console("Process is not in kernel mode.\n");
         USLOSS_Halt(1);
     }
-    
+
+    // Initialize interrupt handlers 
+    USLOSS_IntVec[USLOSS_CLOCK_INT] = clockHandler;    
+
     for (int i = 0; i < MAXPROC; i++) {
         processTable[i].filled = 0;
     }
-    
+
     currentProcess = 0;
     
     int pid = 1;
