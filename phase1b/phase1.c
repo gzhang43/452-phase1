@@ -670,24 +670,24 @@ void zap(int pid) {
     int savedPsr = disableInterrupts();
 
     if (pid <= 0){
-	USLOSS_Console("ERROR: Attempt to zap() a PID which is <= 0. other_pid = 0");
+	USLOSS_Console("ERROR: Attempt to zap() a PID which is <= 0. other_pid = 0\n");
 	USLOSS_Halt(1);
     }
     else if ((pid == processTable[currentProcess % MAXPROC].pid) || (pid == 1) ){
 	if (pid == 1){
-	    USLOSS_Console("ERROR: Attempt to zap() init.");
+	    USLOSS_Console("ERROR: Attempt to zap() init.\n");
 	}
 	else {
-	    USLOSS_Console("ERROR: Attempt to zap() itself.");
+	    USLOSS_Console("ERROR: Attempt to zap() itself.\n");
 	}
 	USLOSS_Halt(1);
     }
     else if ((processTable[pid].terminated == 1) || (processTable[pid].filled == 0)){
 	if (processTable[pid].filled == 0){
-	    USLOSS_Console("ERROR: Attempt to zap() a non-existent process.");
+	    USLOSS_Console("ERROR: Attempt to zap() a non-existent process.\n");
 	}
 	else {
-	    USLOSS_Console("ERROR: Attempt to zap() a process that is already in the process of dying.");
+	    USLOSS_Console("ERROR: Attempt to zap() a process that is already in the process of dying.\n");
 	}
 	USLOSS_Halt(1);
     }
