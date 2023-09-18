@@ -38,6 +38,7 @@ typedef struct PCB {
     int isZapped; // 1 = zapped, 0 = not zapped
     int isBlocked; // 1 = blocked, 0 = not blocked
     int isBlockedByJoin;
+    int isBlockedByZap;
     struct PCB* zappingProcesses; // list of processes zapping this one
     int(*startFunc)(char*);
     char *arg;
@@ -707,6 +708,10 @@ void zap(int pid) {
 	    }
 	    zapChild->nextZapping = &processTable[currentProcess % MAXPROC];
 	}
+	
+	processTable[currentProcess % MAXPROC].isBlocked = 1;
+	processTable[currentProcess % MAXPROC].isBlockedByZap = 1;
+	runDispatcher();
     }
 
     restoreInterrupts(savedPsr);
