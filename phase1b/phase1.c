@@ -597,12 +597,33 @@ void updateTotalTime(void) {
 }
 
 void zap(int pid) {
-    if ((pid == processTable[currentProcess % MAXPROC].pid) || (pid == 1) ){
-	//print error
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
+
+    int savedPsr = disableInterrupts();
+
+    if (pid <= 0){
+	USLOSS_Console("ERROR: Attempt to zap() a PID which is <= 0. other_pid = 0");
+	USLOSS_Halt(1);
+    }
+    else if ((pid == processTable[currentProcess % MAXPROC].pid) || (pid == 1) ){
+	if (pid == 1){
+	    USLOSS_Console("ERROR: Attempt to zap() init.");
+	}
+	else {
+	    USLOSS_Console("ERROR: Attempt to zap() itself.");
+	}
 	USLOSS_Halt(1);
     }
     else if ((processTable[pid].terminated == 1) || (processTable[pid] == NULL)){
-	//print error
+	if (processTable[pid] == NULL){
+	    USLOSS_Console("ERROR: Attempt to zap() a non-existent process.");
+	}
+	else {
+	    USLOSS_Console("ERROR: Attempt to zap() a process that is already in the process of dying.");
+	}
 	USLOSS_Halt(1);
     }
     else {
@@ -611,6 +632,8 @@ void zap(int pid) {
 	zapping[processTable[pid].zapNum] = processTable[currentProcess % MAXPROC];
 	processTable[pid].zapNum += 1;
     }
+
+    restoreInterrupts(savedPsr);
 }
 
 int isZapped(void) {
