@@ -678,45 +678,40 @@ void zap(int pid) {
 	USLOSS_Console("ERROR: Attempt to zap() a PID which is <= 0. other_pid = 0\n");
 	USLOSS_Halt(1);
     }
-    else if ((pid == processTable[currentProcess % MAXPROC].pid) || (pid == 1) ){
-	if (pid == 1){
-	    USLOSS_Console("ERROR: Attempt to zap() init.\n");
-	}
-	else {
-	    USLOSS_Console("ERROR: Attempt to zap() itself.\n");
-	}
+    else if (pid == 1){
+	USLOSS_Console("ERROR: Attempt to zap() init.\n");
 	USLOSS_Halt(1);
     }
-    else if ((processTable[pid % MAXPROC].terminated == 1) || (processTable[pid % MAXPROC].filled == 0)){
-	if (processTable[pid % MAXPROC].filled == 0){
-	    USLOSS_Console("ERROR: Attempt to zap() a non-existent process.\n");
-	}
-	else {
-	    USLOSS_Console("ERROR: Attempt to zap() a process that is already in the process of dying.\n");
-	}
+    else if ((pid == processTable[currentProcess % MAXPROC].pid) ){
+	USLOSS_Console("ERROR: Attempt to zap() itself.\n");
 	USLOSS_Halt(1);
+    }
+    else if (processTable[pid % MAXPROC].filled == 0){
+	USLOSS_Console("ERROR: Attempt to zap() a non-existent process.\n");
+	USLOSS_Halt(1);
+    }
+    else if ((processTable[pid % MAXPROC].terminated == 1)){
+	USLOSS_Console("ERROR: Attempt to zap() a process that is already in the process of dying.\n");
+	USLOSS_Halt(1);
+    }
+    processTable[pid % MAXPROC].isZapped = 1;
+    struct PCB* zapping = processTable[pid % MAXPROC].zappingProcesses;
+    if (zapping == NULL){
+        zapping = &processTable[currentProcess % MAXPROC];
+    }
+    else if (processTable[pid % MAXPROC].nextZapping == NULL){
+        processTable[pid % MAXPROC].nextZapping = &processTable[currentProcess % MAXPROC];
     }
     else {
-	processTable[pid % MAXPROC].isZapped = 1;
-	struct PCB* zapping = processTable[pid % MAXPROC].zappingProcesses;
-	if (zapping == NULL){
-	    zapping = &processTable[currentProcess % MAXPROC];
+        struct PCB* zapChild = processTable[pid % MAXPROC].nextZapping;
+        while (zapChild->nextZapping != NULL){
+    	    zapChild = zapChild->nextZapping;
 	}
-	else if (processTable[pid % MAXPROC].nextZapping == NULL){
-	    processTable[pid % MAXPROC].nextZapping = &processTable[currentProcess % MAXPROC];
-	}
-	else {
-	    struct PCB* zapChild = processTable[pid % MAXPROC].nextZapping;
-	    while (zapChild->nextZapping != NULL){
-		zapChild = zapChild->nextZapping;
-	    }
-	    zapChild->nextZapping = &processTable[currentProcess % MAXPROC];
-	}
-	
-	processTable[currentProcess % MAXPROC].isBlocked = 1;
-	processTable[currentProcess % MAXPROC].isBlockedByZap = 1;
-	runDispatcher();
-    }
+	zapChild->nextZapping = &processTable[currentProcess % MAXPROC];
+    }	
+    processTable[currentProcess % MAXPROC].isBlocked = 1;
+    processTable[currentProcess % MAXPROC].isBlockedByZap = 1;
+    runDispatcher();
 
     restoreInterrupts(savedPsr);
 }
