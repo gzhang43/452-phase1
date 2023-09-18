@@ -329,6 +329,9 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     child->prevSibling = NULL;
     child->prevInQueue = NULL;
     child->nextInQueue = NULL;
+    child->zappingProcesses = NULL;
+    child->nextZapping = NULL;
+    child->prevZapping = NULL;
     child->stack = stack;
     child->filled = 1;
     lastAssignedPid = pid;
