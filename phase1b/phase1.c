@@ -1,9 +1,9 @@
 /*
-Assignment: Phase1a
+Assignment: Phase1B
 Group: Grace Zhang and Ellie Martin
 Course: CSC 452 (Operating Systems)
 Instructors: Russell Lewis and Ben Dicken
-Due Date: 9/13/23
+Due Date: 9/25/23
 
 Description: Code for phase1a of our operating systems kernel that implements
 a library for handling processes. Currently contains functions to create processes,
