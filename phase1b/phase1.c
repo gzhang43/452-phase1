@@ -21,10 +21,11 @@ make
 #include <assert.h>
 #include "phase1.h"
 
+#define DEBUG_MODE 0
+
 void runDispatcher();
 void addProcessToEndOfQueue(int pid);
 void removeProcessFromQueue(int pid);
-void printStatus(int pid);
 
 // PCB struct definition
 typedef struct PCB {
@@ -36,6 +37,7 @@ typedef struct PCB {
     int terminated; // 1 = terminated, 0 = alive
     int isZapped; // 1 = zapped, 0 = not zapped
     int isBlocked; // 1 = blocked, 0 = not blocked
+    int isBlockedByJoin;
     struct PCB* zappingProcesses; // list of processes zapping this one
     int(*startFunc)(char*);
     char *arg;
@@ -269,42 +271,6 @@ void addChildToParent(struct PCB *parent, struct PCB *child) {
     }
 }
 
-void addProcessToEndOfQueue(int pid) {
-    struct PCB *process = &processTable[pid % MAXPROC];
-    int priority = process->priority;
-    
-    if (runQueues[priority] == NULL) {
-        runQueues[priority] = process;
-        return;
-    }
-
-    struct PCB *temp = runQueues[priority];
-    while (temp->nextInQueue != NULL) {
-        temp = temp->nextInQueue;
-    }
-    temp->nextInQueue = process;
-} 
-
-void removeProcessFromQueue(int pid) {
-    struct PCB *process = &processTable[pid % MAXPROC];
-    int priority = process->priority;
-
-    // If process is in middle of queue 
-    if (process->prevInQueue != NULL) {
-	process->prevInQueue->nextInQueue = process->nextInQueue;
-        if (process->nextInQueue != NULL) {
-            process->nextInQueue->prevInQueue = process->prevInQueue;
-        }
-    }
-    // If process is at head of queue
-    else {
-        if (process->nextInQueue != NULL) {
-	    process->nextInQueue->prevInQueue = NULL;
-	}
-        runQueues[priority] = process->nextInQueue;
-    }
-}
-
 /*
 Creates a child process of the current process. A PCB entry is created for the
 child process with initial information and stored in the process table. The
@@ -344,38 +310,38 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     
     // Create entry in process table
     int pid = getNextPid();
-    struct PCB child;
+    // char dummy[1000];
+    struct PCB *child = &processTable[pid % MAXPROC];
     void *stack = malloc(stacksize);
 
-    child.pid = pid;
-    strcpy(child.name, name);
-    child.priority = priority;
-    child.status = 0; // set status to ready
-    child.terminated = 0;
-    child.startFunc = func;
-    child.arg = arg;
-    child.parent = &processTable[currentProcess]; 
-    child.child = NULL;
-    child.nextSibling = NULL;
-    child.prevSibling = NULL;
-    child.prevInQueue = NULL;
-    child.nextInQueue = NULL;
-    child.stack = stack;
-    child.filled = 1;
+    child->pid = pid;
+    strcpy(child->name, name);
+    child->priority = priority;
+    child->status = 0; // set status to ready
+    child->terminated = 0;
+    child->startFunc = func;
+    child->arg = arg;
+    child->parent = &processTable[currentProcess]; 
+    child->child = NULL;
+    child->nextSibling = NULL;
+    child->prevSibling = NULL;
+    child->prevInQueue = NULL;
+    child->nextInQueue = NULL;
+    child->stack = stack;
+    child->filled = 1;
     lastAssignedPid = pid;
     
     // Cases for if process is being created from testcase_main or sentinel
     if (strcmp(name, "testcase_main") == 0) {
-        USLOSS_ContextInit(&child.context, stack, stacksize, NULL, launchTestCaseMain);
+        USLOSS_ContextInit(&child->context, stack, stacksize, NULL, launchTestCaseMain);
     }
     else if (strcmp(name, "sentinel") == 0) {
-        USLOSS_ContextInit(&child.context, stack, stacksize, NULL, sentinel);
+        USLOSS_ContextInit(&child->context, stack, stacksize, NULL, sentinel);
     }
     else {
-        USLOSS_ContextInit(&child.context, stack, stacksize, NULL, launchFunc); 
+        USLOSS_ContextInit(&child->context, stack, stacksize, NULL, launchFunc); 
     }
 
-    processTable[pid % MAXPROC] = child; 
     addChildToParent(&processTable[currentProcess % MAXPROC],
         &processTable[pid % MAXPROC]);
     
@@ -530,6 +496,34 @@ int getpid(void) {
 }
 
 /*
+Using the status field of the PCB struct, prints the state of a process
+with the given parameter pid.
+ 
+If the pid is the pid of the current process, the status is "Running."
+If status > 0 and the terminated field is 1, then the process has 
+terminated and prints with its status number. If terminated is not 0, 
+then the process is "Blocked." If the status is 0, then the process is 
+"Runnable."
+*/
+void printStatus(int pid) {
+    if (pid == currentProcess) {
+	USLOSS_Console("Running");
+	return;
+    }
+    if (processTable[pid].status > 0) {
+	if (processTable[pid].terminated == 1) {
+	    USLOSS_Console("Terminated(%d)", processTable[pid].status);
+	    return;
+	}
+	USLOSS_Console("Blocked");
+	return;
+    }
+    if (processTable[pid].status == 0) {
+	USLOSS_Console("Runnable");
+    }
+}
+
+/*
 Prints out the following information about the processes in the table:
     PID
     Parent PID
@@ -581,31 +575,39 @@ void dumpProcesses(void) {
     restoreInterrupts(savedPsr);
 }
 
-/*
-Using the status field of the PCB struct, prints the state of a process
-with the given parameter pid.
- 
-If the pid is the pid of the current process, the status is "Running."
-If status > 0 and the terminated field is 1, then the process has 
-terminated and prints with its status number. If terminated is not 0, 
-then the process is "Blocked." If the status is 0, then the process is 
-"Runnable."
-*/
-void printStatus(int pid) {
-    if (pid == currentProcess) {
-	USLOSS_Console("Running");
-	return;
+void addProcessToEndOfQueue(int pid) {
+    struct PCB *process = &processTable[pid % MAXPROC];
+    int priority = process->priority;
+    
+    if (runQueues[priority] == NULL) {
+        runQueues[priority] = process;
+        return;
     }
-    if (processTable[pid].status > 0) {
-	if (processTable[pid].terminated == 1) {
-	    USLOSS_Console("Terminated(%d)", processTable[pid].status);
-	    return;
+
+    struct PCB *temp = runQueues[priority];
+    while (temp->nextInQueue != NULL) {
+        temp = temp->nextInQueue;
+    }
+    temp->nextInQueue = process;
+} 
+
+void removeProcessFromQueue(int pid) {
+    struct PCB *process = &processTable[pid % MAXPROC];
+    int priority = process->priority;
+
+    // If process is in middle of queue 
+    if (process->prevInQueue != NULL) {
+	process->prevInQueue->nextInQueue = process->nextInQueue;
+        if (process->nextInQueue != NULL) {
+            process->nextInQueue->prevInQueue = process->prevInQueue;
+        }
+    }
+    // If process is at head of queue
+    else {
+        if (process->nextInQueue != NULL) {
+	    process->nextInQueue->prevInQueue = NULL;
 	}
-	USLOSS_Console("Blocked");
-	return;
-    }
-    if (processTable[pid].status == 0) {
-	USLOSS_Console("Runnable");
+        runQueues[priority] = process->nextInQueue;
     }
 }
 
@@ -643,7 +645,9 @@ void runDispatcher() {
         return;   
     }
 
-    // USLOSS_Console("%s\n", runQueues[i]->name); 
+    if (DEBUG_MODE == 1) {
+        USLOSS_Console("Switching to %s\n", runQueues[i]->name); 
+    }
     USLOSS_Context *old = &processTable[currentProcess % MAXPROC].context;
     currentProcess = runQueues[i]->pid;
     USLOSS_ContextSwitch(old, &processTable[currentProcess % MAXPROC].context);
@@ -678,6 +682,23 @@ int unblockProc(int pid) {
 
     restoreInterrupts(savedPsr);
     return 0;
+}
+
+/* this is the interrupt handler for the CLOCK device */
+static void clockHandler(int dev,void *arg) {
+    if (DEBUG_MODE) {
+        USLOSS_Console("clockHandler(): PSR = %d\n", USLOSS_PsrGet());
+        USLOSS_Console("clockHandler(): currentTime = %d\n", currentTime());
+    }
+
+    /* make sure to call this first, before timeSlice(), since we want to do
+     * the Phase 2 related work even if process(es) are chewing up lots of
+     * CPU.
+     */
+    phase2_clockHandler();
+
+    // call the dispatcher if the time slice has expired
+    timeSlice();
 }
 
 int readCurStartTime(void) {
