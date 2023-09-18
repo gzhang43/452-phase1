@@ -1,6 +1,6 @@
 /*
-Assignment: Phase 1B
-Group: Grace Zhang nd Ellie Martin
+Assignment: Phase1B
+Group: Grace Zhang and Ellie Martin
 Course: CSC 452 (Operating Systems)
 Instructors: Russell Lewis and Ben Dicken
 Due Date: 9/25/23
@@ -39,6 +39,7 @@ typedef struct PCB {
     int isZapped; // 1 = zapped, 0 = not zapped
     int isBlocked; // 1 = blocked, 0 = not blocked
     int isBlockedByJoin;
+    int isBlockedByZap;
     struct PCB* zappingProcesses; // list of processes zapping this one
     int(*startFunc)(char*);
     char *arg;
@@ -48,6 +49,8 @@ typedef struct PCB {
     struct PCB* prevSibling;
     struct PCB* nextInQueue;
     struct PCB* prevInQueue;
+    struct PCB* nextZapping;
+    struct PCB* prevZapping;
     void *stack;
     int curStartTime;
     int totalTime;
@@ -331,6 +334,9 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     child->prevSibling = NULL;
     child->prevInQueue = NULL;
     child->nextInQueue = NULL;
+    child->zappingProcesses = NULL;
+    child->nextZapping = NULL;
+    child->prevZapping = NULL;
     child->stack = stack;
     child->filled = 1;
     lastAssignedPid = pid;
@@ -661,9 +667,62 @@ void updateTotalTime(void) {
 }
 
 void zap(int pid) {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
+
+    int savedPsr = disableInterrupts();
+
+    if (pid <= 0){
+	USLOSS_Console("ERROR: Attempt to zap() a PID which is <= 0. other_pid = 0\n");
+	USLOSS_Halt(1);
+    }
+    else if ((pid == processTable[currentProcess % MAXPROC].pid) || (pid == 1) ){
+	if (pid == 1){
+	    USLOSS_Console("ERROR: Attempt to zap() init.\n");
+	}
+	else {
+	    USLOSS_Console("ERROR: Attempt to zap() itself.\n");
+	}
+	USLOSS_Halt(1);
+    }
+    else if ((processTable[pid % MAXPROC].terminated == 1) || (processTable[pid % MAXPROC].filled == 0)){
+	if (processTable[pid % MAXPROC].filled == 0){
+	    USLOSS_Console("ERROR: Attempt to zap() a non-existent process.\n");
+	}
+	else {
+	    USLOSS_Console("ERROR: Attempt to zap() a process that is already in the process of dying.\n");
+	}
+	USLOSS_Halt(1);
+    }
+    else {
+	processTable[pid % MAXPROC].isZapped = 1;
+	struct PCB* zapping = processTable[pid % MAXPROC].zappingProcesses;
+	if (zapping == NULL){
+	    zapping = &processTable[currentProcess % MAXPROC];
+	}
+	else if (processTable[pid % MAXPROC].nextZapping == NULL){
+	    processTable[pid % MAXPROC].nextZapping = &processTable[currentProcess % MAXPROC];
+	}
+	else {
+	    struct PCB* zapChild = processTable[pid % MAXPROC].nextZapping;
+	    while (zapChild->nextZapping != NULL){
+		zapChild = zapChild->nextZapping;
+	    }
+	    zapChild->nextZapping = &processTable[currentProcess % MAXPROC];
+	}
+	
+	processTable[currentProcess % MAXPROC].isBlocked = 1;
+	processTable[currentProcess % MAXPROC].isBlockedByZap = 1;
+	runDispatcher();
+    }
+
+    restoreInterrupts(savedPsr);
 }
 
 int isZapped(void) {
+    return processTable[currentProcess % MAXPROC].isZapped;
 } 
 
 void blockMe(int newStatus) {
