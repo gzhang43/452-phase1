@@ -25,9 +25,11 @@ make
 #define DEBUG_MODE 0
 
 static void clockHandler(int dev,void *arg);
+void updateTotalTime(void);
 void runDispatcher();
 void addProcessToEndOfQueue(int pid);
 void removeProcessFromQueue(int pid);
+int isZapped(void);
 
 // PCB struct definition
 typedef struct PCB {
@@ -55,6 +57,7 @@ typedef struct PCB {
     void *stack;
     int curStartTime;
     int totalTime;
+    int exceededTimeSlice;
     int filled; // if this pcb is in use by a process
 } PCB;
 
@@ -122,7 +125,8 @@ void sentinel(void) {
    
     while (1) {
         if (phase2_check_io() == 0) {
-            USLOSS_Console("Deadlock detected.\n");
+            USLOSS_Console("DEADLOCK DETECTED!  All of the processes have ");
+            USLOSS_Console("blocked, but I/O is not ongoing.\n");
             USLOSS_Halt(0);
         }
         USLOSS_WaitInt();
@@ -482,6 +486,11 @@ void quit(int status) {
         USLOSS_Halt(1);
     }
     int savedPsr = disableInterrupts(); 
+
+    if (DEBUG_MODE) {
+        USLOSS_Console("Quit started by process %d.\n", currentProcess);
+    }
+
     if (processTable[currentProcess % MAXPROC].child != NULL) {
         USLOSS_Console("ERROR: Process pid %d called quit() ", currentProcess);
         USLOSS_Console("while it still had children.\n");
@@ -498,8 +507,9 @@ void quit(int status) {
  
     // Unblock everything trying to zap this process
     if (isZapped() == 1){
-	struct PCB* zapping = processTable[currentProcess % MAXPROC].zappingProcesses;
-	while (zapping != NULL){
+	struct PCB* zapping = 
+            processTable[currentProcess % MAXPROC].zappingProcesses;
+        while (zapping != NULL){
 	    if (zapping->isBlockedByZap == 1){
 		zapping->isBlockedByZap = 0;
 		unblockProc(zapping->pid);
@@ -508,7 +518,9 @@ void quit(int status) {
 	}
 	processTable[currentProcess % MAXPROC].isZapped = 0;
     }
-
+    if (DEBUG_MODE) {
+        dumpProcesses();
+    }
     runDispatcher();
     restoreInterrupts(savedPsr);
 }
@@ -653,11 +665,15 @@ int currentTime() {
 void runDispatcher() {
     if (currentProcess > 0) {
         struct PCB *process = &processTable[currentProcess % MAXPROC];
-        removeProcessFromQueue(process->pid);
         
-        // If process is blocked or terminated, then do not add back to queue
-        if (process->isBlocked == 0 && process->terminated == 0) {
+        if (process->exceededTimeSlice == 1 && process->isBlocked == 0 &&
+                process->terminated == 0) {
+            removeProcessFromQueue(process->pid);
             addProcessToEndOfQueue(process->pid);
+        }
+        // If process is blocked or terminated, then do not add back to queue
+        if (process->isBlocked == 1 || process->terminated == 1) {
+            removeProcessFromQueue(process->pid);
         }
     }
 
@@ -669,20 +685,23 @@ void runDispatcher() {
         }
         i++;
     } 
-    // Return if current process is still the highest priority 
-    if (runQueues[i]->pid == currentProcess) {
-        return;   
-    }
 
     if (DEBUG_MODE == 1) {
         USLOSS_Console("Switching to %s\n", runQueues[i]->name); 
     }
+
+    updateTotalTime();
+
     USLOSS_Context *old = &processTable[currentProcess % MAXPROC].context;
     currentProcess = runQueues[i]->pid;
+    processTable[currentProcess % MAXPROC].curStartTime = currentTime();
     USLOSS_ContextSwitch(old, &processTable[currentProcess % MAXPROC].context);
 }
 
 void updateTotalTime(void) {
+    // Update total time of current process
+    processTable[currentProcess % MAXPROC].totalTime = readtime() +
+        currentTime() - readCurStartTime();
 }
 
 void zap(int pid) {
@@ -692,6 +711,10 @@ void zap(int pid) {
     }
 
     int savedPsr = disableInterrupts();
+    
+    if (DEBUG_MODE) {
+        dumpProcesses();
+    }
 
     if (pid <= 0) {
 	USLOSS_Console("ERROR: Attempt to zap() a PID which is <= 0. ");
@@ -706,7 +729,8 @@ void zap(int pid) {
 	USLOSS_Console("ERROR: Attempt to zap() itself.\n");
 	USLOSS_Halt(1);
     }
-    else if (processTable[pid % MAXPROC].filled == 0) {
+    else if (processTable[pid % MAXPROC].filled == 0 || (pid !=
+            processTable[pid % MAXPROC].pid)) {
 	USLOSS_Console("ERROR: Attempt to zap() a non-existent process.\n");
 	USLOSS_Halt(1);
     }
@@ -719,7 +743,8 @@ void zap(int pid) {
     processTable[pid % MAXPROC].isZapped = 1;
     struct PCB* zapping = processTable[pid % MAXPROC].zappingProcesses;
     if (zapping == NULL) {
-        zapping = &processTable[currentProcess % MAXPROC];
+        processTable[pid % MAXPROC].zappingProcesses = 
+            &processTable[currentProcess % MAXPROC];
     }
     else {
         while (zapping->nextZapping != NULL) {
@@ -729,6 +754,7 @@ void zap(int pid) {
     }
     processTable[currentProcess % MAXPROC].isBlocked = 1;
     processTable[currentProcess % MAXPROC].isBlockedByZap = 1;
+    processTable[currentProcess % MAXPROC].status = 12;
     runDispatcher();
 
     restoreInterrupts(savedPsr);
@@ -739,6 +765,13 @@ int isZapped(void) {
 } 
 
 void blockMe(int newStatus) {
+    if (newStatus <= 10) {
+        USLOSS_Console("ERROR: New status must be greater than 10.\n");
+        USLOSS_Halt(1);
+    }
+    processTable[currentProcess % MAXPROC].status = newStatus;
+    processTable[currentProcess % MAXPROC].isBlocked = 1;
+    runDispatcher();
 }
 
 int unblockProc(int pid) {
@@ -754,6 +787,7 @@ int unblockProc(int pid) {
        return -2;  
     }
     processTable[pid % MAXPROC].isBlocked = 0;
+    processTable[pid % MAXPROC].status = 0;
     addProcessToEndOfQueue(pid);
     runDispatcher();
 
@@ -783,8 +817,22 @@ int readCurStartTime(void) {
 }
 
 int readtime(void) { 
-    
+    return processTable[currentProcess % MAXPROC].totalTime;    
 }
 
 void timeSlice(void) {
+    if (DEBUG_MODE) {
+        USLOSS_Console("timeSlice started.\n");
+    }
+
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1); 
+    }                   
+    int savedPsr = disableInterrupts(); 
+    if (currentTime() - readCurStartTime() >= 80) {
+        processTable[currentProcess % MAXPROC].exceededTimeSlice = 1; 
+        runDispatcher();
+    }
+    restoreInterrupts(savedPsr);
 }
