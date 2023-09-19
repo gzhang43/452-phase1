@@ -6,8 +6,9 @@ Instructors: Russell Lewis and Ben Dicken
 Due Date: 9/25/23
 
 Description: Code for phase1a of our operating systems kernel that implements
-a library for handling processes. Currently contains functions to create processes,
-store processes, quit processes and collect them, and to switch between processes.
+a library for handling processes. Currently contains functions to create 
+processes, store processes, quit processes and collect them, and to switch
+between processes.
 
 To compile and run: 
 make
@@ -337,7 +338,8 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     
     // Cases for if process is being created from testcase_main or sentinel
     if (strcmp(name, "testcase_main") == 0) {
-        USLOSS_ContextInit(&child->context, stack, stacksize, NULL, launchTestCaseMain);
+        USLOSS_ContextInit(&child->context, stack, stacksize, NULL, 
+            launchTestCaseMain);
     }
     else if (strcmp(name, "sentinel") == 0) {
         USLOSS_ContextInit(&child->context, stack, stacksize, NULL, sentinel);
@@ -438,7 +440,11 @@ int join(int *status) {
     // If no children are terminated, then block and call dispatcher 
     if (childPid == -1) {
         processTable[currentProcess % MAXPROC].isBlocked = 1;
+        processTable[currentProcess % MAXPROC].isBlockedByJoin = 1;
+        processTable[currentProcess % MAXPROC].status = 11;
         runDispatcher();
+        childPid = getTerminatedChild(
+            &processTable[currentProcess % MAXPROC]);
     }
 
     // set out-value of status via pointer
@@ -480,7 +486,8 @@ void quit(int status) {
     processTable[currentProcess % MAXPROC].terminated = 1;    
 
     // Unblock parent if it's waiting in join for a child to terminate    
-    if (processTable[currentProcess % MAXPROC].parent->isBlocked) {
+    if (processTable[currentProcess % MAXPROC].parent->isBlockedByJoin) {
+        processTable[currentProcess % MAXPROC].parent->isBlockedByJoin = 0;
         unblockProc(processTable[currentProcess % MAXPROC].parent->pid);
     }
 
@@ -676,8 +683,9 @@ int unblockProc(int pid) {
     }
     int savedPsr = disableInterrupts(); 
     
-    if (processTable[pid % MAXPROC].filled == 0 || processTable[pid % MAXPROC].isBlocked == 0 
-            || processTable[pid % MAXPROC].status <= 10) {
+    if (processTable[pid % MAXPROC].filled == 0 || 
+            processTable[pid % MAXPROC].isBlocked == 0 || 
+            processTable[pid % MAXPROC].status <= 10) {
        return -2;  
     }
     processTable[pid % MAXPROC].isBlocked = 0;
