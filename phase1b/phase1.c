@@ -495,6 +495,19 @@ void quit(int status) {
         processTable[currentProcess % MAXPROC].parent->isBlockedByJoin = 0;
         unblockProc(processTable[currentProcess % MAXPROC].parent->pid);
     }
+ 
+    // Unblock everything trying to zap this process
+    if (isZapped() == 1){
+	struct PCB* zapping = processTable[currentProcess % MAXPROC].zappingProcesses;
+	while (zapping != NULL){
+	    if (zapping->isBlockedByZap == 1){
+		zapping->isBlockedByZap = 0;
+		unblockProc(zapping->pid);
+	    }
+	    zapping = zapping->nextZapping;
+	}
+	processTable[currentProcess % MAXPROC].isZapped = 0;
+    }
 
     runDispatcher();
     restoreInterrupts(savedPsr);
