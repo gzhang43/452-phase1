@@ -138,8 +138,7 @@ void launchFunc(void) {
     struct PCB process = processTable[currentProcess % MAXPROC];
     enableInterrupts();
     int ret = process.startFunc(process.arg);
-    USLOSS_Console("Error: User function returned.\n");
-    USLOSS_Halt(1);
+    quit(0);    
 }
 
 /*
@@ -681,41 +680,40 @@ void zap(int pid) {
 
     int savedPsr = disableInterrupts();
 
-    if (pid <= 0){
-	USLOSS_Console("ERROR: Attempt to zap() a PID which is <= 0. other_pid = 0\n");
+    if (pid <= 0) {
+	USLOSS_Console("ERROR: Attempt to zap() a PID which is <= 0. ");
+        USLOSS_Console("other_pid = 0\n");
 	USLOSS_Halt(1);
     }
-    else if (pid == 1){
+    else if (pid == 1) {
 	USLOSS_Console("ERROR: Attempt to zap() init.\n");
 	USLOSS_Halt(1);
     }
-    else if ((pid == processTable[currentProcess % MAXPROC].pid) ){
+    else if (pid == processTable[currentProcess % MAXPROC].pid) {
 	USLOSS_Console("ERROR: Attempt to zap() itself.\n");
 	USLOSS_Halt(1);
     }
-    else if (processTable[pid % MAXPROC].filled == 0){
+    else if (processTable[pid % MAXPROC].filled == 0) {
 	USLOSS_Console("ERROR: Attempt to zap() a non-existent process.\n");
 	USLOSS_Halt(1);
     }
-    else if ((processTable[pid % MAXPROC].terminated == 1)){
-	USLOSS_Console("ERROR: Attempt to zap() a process that is already in the process of dying.\n");
+    else if (processTable[pid % MAXPROC].terminated == 1) {
+	USLOSS_Console("ERROR: Attempt to zap() a process that is already ");
+        USLOSS_Console("in the process of dying.\n");
 	USLOSS_Halt(1);
     }
+
     processTable[pid % MAXPROC].isZapped = 1;
     struct PCB* zapping = processTable[pid % MAXPROC].zappingProcesses;
-    if (zapping == NULL){
+    if (zapping == NULL) {
         zapping = &processTable[currentProcess % MAXPROC];
     }
-    else if (processTable[pid % MAXPROC].nextZapping == NULL){
-        processTable[pid % MAXPROC].nextZapping = &processTable[currentProcess % MAXPROC];
-    }
     else {
-        struct PCB* zapChild = processTable[pid % MAXPROC].nextZapping;
-        while (zapChild->nextZapping != NULL){
-    	    zapChild = zapChild->nextZapping;
-	}
-	zapChild->nextZapping = &processTable[currentProcess % MAXPROC];
-    }	
+        while (zapping->nextZapping != NULL) {
+            zapping = zapping->nextZapping;
+        }
+        zapping->nextZapping = &processTable[currentProcess % MAXPROC];
+    }
     processTable[currentProcess % MAXPROC].isBlocked = 1;
     processTable[currentProcess % MAXPROC].isBlockedByZap = 1;
     runDispatcher();
