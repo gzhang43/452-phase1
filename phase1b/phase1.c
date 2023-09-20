@@ -445,9 +445,9 @@ int join(int *status) {
    
     // If no children are terminated, then block and call dispatcher 
     if (childPid == -1) {
-        processTable[currentProcess % MAXPROC].isBlocked = 1;
         processTable[currentProcess % MAXPROC].isBlockedByJoin = 1;
         processTable[currentProcess % MAXPROC].status = 11;
+        processTable[currentProcess % MAXPROC].isBlocked = 1;
         runDispatcher();
         childPid = getTerminatedChild(
             &processTable[currentProcess % MAXPROC]);
@@ -496,6 +496,15 @@ void quit(int status) {
     processTable[currentProcess % MAXPROC].status = status;
     processTable[currentProcess % MAXPROC].terminated = 1;    
 
+    // Unblock parent if it's waiting in join for a child to terminate    
+    if (processTable[currentProcess % MAXPROC].parent->isBlockedByJoin) {
+        processTable[currentProcess % MAXPROC].parent->isBlockedByJoin = 0;
+        processTable[currentProcess % MAXPROC].parent->isBlocked = 0;
+        processTable[currentProcess % MAXPROC].parent->status = 0;
+        addProcessToEndOfQueue(
+            processTable[currentProcess % MAXPROC].parent->pid);
+    }
+
     // Unblock everything trying to zap this process
     if (isZapped() == 1){
 	struct PCB* zapping = 
@@ -511,12 +520,6 @@ void quit(int status) {
 	}
 	processTable[currentProcess % MAXPROC].isZapped = 0;
         processTable[currentProcess % MAXPROC].zappingProcesses = NULL;
-    }
-
-    // Unblock parent if it's waiting in join for a child to terminate    
-    if (processTable[currentProcess % MAXPROC].parent->isBlockedByJoin) {
-        processTable[currentProcess % MAXPROC].parent->isBlockedByJoin = 0;
-        unblockProc(processTable[currentProcess % MAXPROC].parent->pid);
     }
     
     if (DEBUG_MODE) {
@@ -564,6 +567,9 @@ void printStatus(int index) {
         }
         else if (processTable[index].isBlockedByZap) {
             USLOSS_Console("(waiting for zap target to quit)");
+        }
+        else {
+            USLOSS_Console("(%d)", processTable[index].status);
         }
 	return;
     }
@@ -643,6 +649,8 @@ void removeProcessFromQueue(int pid) {
 	}
         runQueues[priority] = process->nextInQueue;
     }
+    process->nextInQueue = NULL;
+    process->prevInQueue = NULL;
 }
 
 /*
@@ -658,17 +666,15 @@ int currentTime() {
 void runDispatcher() {
     if (currentProcess > 0) {
         struct PCB *process = &processTable[currentProcess % MAXPROC];
-        
         if (process->exceededTimeSlice == 1 && process->isBlocked == 0 &&
                 process->terminated == 0) {
             removeProcessFromQueue(process->pid);
             addProcessToEndOfQueue(process->pid);
         }
-        // If process is blocked or terminated, then do not add back to queue
-        if (process->isBlocked == 1 || process->terminated == 1) {
-            removeProcessFromQueue(process->pid);
+        else if (process->isBlocked == 1 || process->terminated == 1) {
+            removeProcessFromQueue(process->pid);  
         }
-    }
+    } 
 
     // Get the priority of the process to run next
     int i = 1;
@@ -677,7 +683,14 @@ void runDispatcher() {
             break;
         }
         i++;
-    } 
+    }
+   
+    if (currentProcess > 0 && i < processTable[currentProcess % MAXPROC].priority &&
+            processTable[currentProcess % MAXPROC].terminated == 0 &&
+            processTable[currentProcess % MAXPROC].isBlocked == 0) {
+        removeProcessFromQueue(currentProcess);
+        addProcessToEndOfQueue(currentProcess);
+    }
 
     if (DEBUG_MODE == 1) {
         USLOSS_Console("Switching to %s\n", runQueues[i]->name); 
@@ -689,6 +702,7 @@ void runDispatcher() {
 
     USLOSS_Context *old = &processTable[currentProcess % MAXPROC].context;
     currentProcess = runQueues[i]->pid;
+    // Reset start time to the current time
     processTable[currentProcess % MAXPROC].curStartTime = currentTime();
     USLOSS_ContextSwitch(old, &processTable[currentProcess % MAXPROC].context);
 }
@@ -741,11 +755,10 @@ void zap(int pid) {
             &processTable[currentProcess % MAXPROC];
         processTable[pid % MAXPROC].zappingProcesses->nextZapping = temp;
     }
-    processTable[currentProcess % MAXPROC].isBlocked = 1;
     processTable[currentProcess % MAXPROC].isBlockedByZap = 1;
     processTable[currentProcess % MAXPROC].status = 12;
+    processTable[currentProcess % MAXPROC].isBlocked = 1;
     runDispatcher();
-
     restoreInterrupts(savedPsr);
 }
 
@@ -813,19 +826,21 @@ int readCurStartTime(void) {
 }
 
 int readtime(void) { 
-    return processTable[currentProcess % MAXPROC].totalTime;    
+    return processTable[currentProcess % MAXPROC].totalTime + currentTime() -
+        readCurStartTime(); 
 }
 
 void timeSlice(void) {
-    if (DEBUG_MODE) {
-        USLOSS_Console("timeSlice started.\n");
-    }
-
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
         USLOSS_Halt(1); 
     }                   
     int savedPsr = disableInterrupts(); 
+
+    if (DEBUG_MODE) {
+        USLOSS_Console("timeSlice started.\n");
+    }
+
     if (currentTime() - readCurStartTime() >= 80) {
         processTable[currentProcess % MAXPROC].exceededTimeSlice = 1; 
         runDispatcher();
