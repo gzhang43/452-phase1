@@ -707,6 +707,15 @@ void runDispatcher() {
     USLOSS_ContextSwitch(old, &processTable[currentProcess % MAXPROC].context);
 }
 
+/*
+Zap requests a given process to terminate itself (when that process eventually calls quit)
+It first goes through several cases to ensure that a valid pid was given, and then tells the
+given process it has been zapped and adds the current process to the head  of the given
+process' zappedProcesses linked list.
+It then blocks the current process and sets its status accordingly, then calls the dispatcher.
+Parameters:
+    int pid: Integer representing the pid of the process to zap.
+*/
 void zap(int pid) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
@@ -762,6 +771,7 @@ void zap(int pid) {
     restoreInterrupts(savedPsr);
 }
 
+//returns the isZapped field of the current process to tell whether ot not it has been zapped
 int isZapped(void) {
     return processTable[currentProcess % MAXPROC].isZapped;
 } 
@@ -821,10 +831,12 @@ static void clockHandler(int dev,void *arg) {
     timeSlice();
 }
 
+//returns the current start time of the current running process
 int readCurStartTime(void) {
     return processTable[currentProcess % MAXPROC].curStartTime;
 }
 
+//calculates and returns the total time the current process has been running
 int readtime(void) { 
     return processTable[currentProcess % MAXPROC].totalTime + currentTime() -
         readCurStartTime(); 
