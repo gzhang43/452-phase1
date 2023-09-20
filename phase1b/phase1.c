@@ -684,6 +684,10 @@ void runDispatcher() {
         }
         i++;
     }
+
+    if (runQueues[i]->pid == currentProcess) {
+        return;
+    }
    
     if (currentProcess > 0 && i < processTable[currentProcess % MAXPROC].priority &&
             processTable[currentProcess % MAXPROC].terminated == 0 &&
