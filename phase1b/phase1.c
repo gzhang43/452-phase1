@@ -25,7 +25,6 @@ make
 #define DEBUG_MODE 0
 
 static void clockHandler(int dev,void *arg);
-void updateTotalTime(void);
 void runDispatcher();
 void addProcessToEndOfQueue(int pid);
 void removeProcessFromQueue(int pid);
@@ -53,7 +52,6 @@ typedef struct PCB {
     struct PCB* nextInQueue;
     struct PCB* prevInQueue;
     struct PCB* nextZapping;
-    struct PCB* prevZapping;
     void *stack;
     int curStartTime;
     int totalTime;
@@ -340,7 +338,6 @@ int fork1(char *name, int(*func)(char *), char *arg, int stacksize,
     child->nextInQueue = NULL;
     child->zappingProcesses = NULL;
     child->nextZapping = NULL;
-    child->prevZapping = NULL;
     child->stack = stack;
     child->filled = 1;
     lastAssignedPid = pid;
@@ -499,12 +496,6 @@ void quit(int status) {
     processTable[currentProcess % MAXPROC].status = status;
     processTable[currentProcess % MAXPROC].terminated = 1;    
 
-    // Unblock parent if it's waiting in join for a child to terminate    
-    if (processTable[currentProcess % MAXPROC].parent->isBlockedByJoin) {
-        processTable[currentProcess % MAXPROC].parent->isBlockedByJoin = 0;
-        unblockProc(processTable[currentProcess % MAXPROC].parent->pid);
-    }
- 
     // Unblock everything trying to zap this process
     if (isZapped() == 1){
 	struct PCB* zapping = 
@@ -512,15 +503,26 @@ void quit(int status) {
         while (zapping != NULL){
 	    if (zapping->isBlockedByZap == 1){
 		zapping->isBlockedByZap = 0;
-		unblockProc(zapping->pid);
+                zapping->isBlocked = 0;
+                zapping->status = 0;
+                addProcessToEndOfQueue(zapping->pid);
 	    }
 	    zapping = zapping->nextZapping;
 	}
 	processTable[currentProcess % MAXPROC].isZapped = 0;
+        processTable[currentProcess % MAXPROC].zappingProcesses = NULL;
     }
+
+    // Unblock parent if it's waiting in join for a child to terminate    
+    if (processTable[currentProcess % MAXPROC].parent->isBlockedByJoin) {
+        processTable[currentProcess % MAXPROC].parent->isBlockedByJoin = 0;
+        unblockProc(processTable[currentProcess % MAXPROC].parent->pid);
+    }
+    
     if (DEBUG_MODE) {
-        dumpProcesses();
-    }
+        USLOSS_Console("Process dump before quit() calls dispatcher.\n");
+        dumpProcesses(); 
+    }    
     runDispatcher();
     restoreInterrupts(savedPsr);
 }
@@ -546,20 +548,26 @@ terminated and prints with its status number. If terminated is not 0,
 then the process is "Blocked." If the status is 0, then the process is 
 "Runnable."
 */
-void printStatus(int pid) {
-    if (pid == currentProcess) {
+void printStatus(int index) {
+    if (index == currentProcess) {
 	USLOSS_Console("Running");
 	return;
     }
-    if (processTable[pid].status > 0) {
-	if (processTable[pid].terminated == 1) {
-	    USLOSS_Console("Terminated(%d)", processTable[pid].status);
+    if (processTable[index].status > 0) {
+	if (processTable[index].terminated == 1) {
+	    USLOSS_Console("Terminated(%d)", processTable[index].status);
 	    return;
 	}
 	USLOSS_Console("Blocked");
+        if (processTable[index].isBlockedByJoin == 1) {
+            USLOSS_Console("(waiting for child to quit)");
+        }
+        else if (processTable[index].isBlockedByZap) {
+            USLOSS_Console("(waiting for zap target to quit)");
+        }
 	return;
     }
-    if (processTable[pid].status == 0) {
+    if (processTable[index].status == 0) {
 	USLOSS_Console("Runnable");
     }
 }
@@ -581,33 +589,18 @@ void dumpProcesses(void) {
         USLOSS_Halt(1);
     }
     int savedPsr = disableInterrupts(); 
-    USLOSS_Console("PID PPID CPID NSPID PSPID NAME              PRIORITY STATE\n");
+    USLOSS_Console(" PID  PPID  %-16s  PRIORITY  STATE\n", "NAME");
     int i = 0;
-    while (i < MAXPROC) {
-	if (processTable[i].filled == 1) {
-	    USLOSS_Console("%*d ", -3,  processTable[i].pid);
-	    if (processTable[i].parent != NULL) {
-		USLOSS_Console("%*d ", -4, processTable[i].parent->pid);
+    while (i < MAXPROC){
+	if (processTable[i].filled == 1){
+	    USLOSS_Console("%4d  ", processTable[i].pid);
+	    if (processTable[i].parent != NULL){
+		USLOSS_Console("%4d  ", processTable[i].parent->pid);
 	    } else {
-                USLOSS_Console("0    ");
-	    }
-	    if (processTable[i].child != NULL) {
-		USLOSS_Console("%*d ", -4, processTable[i].child->pid);
-	    } else {
-                USLOSS_Console("null ");
-	    }
-	    if (processTable[i].nextSibling != NULL) {
-		USLOSS_Console("%*d ", -5, processTable[i].nextSibling->pid);
-	    } else {
-                USLOSS_Console("null  ");
-	    }
-	    if (processTable[i].prevSibling != NULL) {
-		USLOSS_Console("%*d ", -5, processTable[i].prevSibling->pid);
-	    } else {
-                USLOSS_Console("null  ");
-	    }
-	    USLOSS_Console("%*s", -18, processTable[i].name);
-	    USLOSS_Console("%*d  ", 8, processTable[i].priority);
+                USLOSS_Console("%4d  ", 0);
+            }
+	    USLOSS_Console("%-16s  ", processTable[i].name);
+	    USLOSS_Console("%-8d  ", processTable[i].priority);
 	    printStatus(i);
 	    USLOSS_Console("\n");
 	}
@@ -690,18 +683,14 @@ void runDispatcher() {
         USLOSS_Console("Switching to %s\n", runQueues[i]->name); 
     }
 
-    updateTotalTime();
+    // Update total time of current process
+    processTable[currentProcess % MAXPROC].totalTime = readtime() +
+        currentTime() - readCurStartTime();
 
     USLOSS_Context *old = &processTable[currentProcess % MAXPROC].context;
     currentProcess = runQueues[i]->pid;
     processTable[currentProcess % MAXPROC].curStartTime = currentTime();
     USLOSS_ContextSwitch(old, &processTable[currentProcess % MAXPROC].context);
-}
-
-void updateTotalTime(void) {
-    // Update total time of current process
-    processTable[currentProcess % MAXPROC].totalTime = readtime() +
-        currentTime() - readCurStartTime();
 }
 
 void zap(int pid) {
@@ -747,10 +736,10 @@ void zap(int pid) {
             &processTable[currentProcess % MAXPROC];
     }
     else {
-        while (zapping->nextZapping != NULL) {
-            zapping = zapping->nextZapping;
-        }
-        zapping->nextZapping = &processTable[currentProcess % MAXPROC];
+        struct PCB *temp = zapping;
+        processTable[pid % MAXPROC].zappingProcesses = 
+            &processTable[currentProcess % MAXPROC];
+        processTable[pid % MAXPROC].zappingProcesses->nextZapping = temp;
     }
     processTable[currentProcess % MAXPROC].isBlocked = 1;
     processTable[currentProcess % MAXPROC].isBlockedByZap = 1;
@@ -765,6 +754,12 @@ int isZapped(void) {
 } 
 
 void blockMe(int newStatus) {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1);
+    }
+    int savedPsr = disableInterrupts();
+
     if (newStatus <= 10) {
         USLOSS_Console("ERROR: New status must be greater than 10.\n");
         USLOSS_Halt(1);
@@ -772,6 +767,7 @@ void blockMe(int newStatus) {
     processTable[currentProcess % MAXPROC].status = newStatus;
     processTable[currentProcess % MAXPROC].isBlocked = 1;
     runDispatcher();
+    restoreInterrupts(savedPsr);
 }
 
 int unblockProc(int pid) {
