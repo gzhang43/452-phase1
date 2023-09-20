@@ -496,6 +496,15 @@ void quit(int status) {
     processTable[currentProcess % MAXPROC].status = status;
     processTable[currentProcess % MAXPROC].terminated = 1;    
 
+    // Unblock parent if it's waiting in join for a child to terminate    
+    if (processTable[currentProcess % MAXPROC].parent->isBlockedByJoin) {
+        processTable[currentProcess % MAXPROC].parent->isBlockedByJoin = 0;
+        processTable[currentProcess % MAXPROC].parent->isBlocked = 0;
+        processTable[currentProcess % MAXPROC].parent->status = 0;
+        addProcessToEndOfQueue(
+            processTable[currentProcess % MAXPROC].parent->pid);
+    }
+
     // Unblock everything trying to zap this process
     if (isZapped() == 1){
 	struct PCB* zapping = 
@@ -511,12 +520,6 @@ void quit(int status) {
 	}
 	processTable[currentProcess % MAXPROC].isZapped = 0;
         processTable[currentProcess % MAXPROC].zappingProcesses = NULL;
-    }
-
-    // Unblock parent if it's waiting in join for a child to terminate    
-    if (processTable[currentProcess % MAXPROC].parent->isBlockedByJoin) {
-        processTable[currentProcess % MAXPROC].parent->isBlockedByJoin = 0;
-        unblockProc(processTable[currentProcess % MAXPROC].parent->pid);
     }
     
     if (DEBUG_MODE) {
@@ -680,11 +683,13 @@ void runDispatcher() {
             break;
         }
         i++;
-    } 
-
-    // Return if currentProcess is still the highest priority
-    if (runQueues[i]->pid == currentProcess) {
-        return;
+    }
+   
+    if (currentProcess > 0 && i < processTable[currentProcess % MAXPROC].priority &&
+            processTable[currentProcess % MAXPROC].terminated == 0 &&
+            processTable[currentProcess % MAXPROC].isBlocked == 0) {
+        removeProcessFromQueue(currentProcess);
+        addProcessToEndOfQueue(currentProcess);
     }
 
     if (DEBUG_MODE == 1) {
@@ -697,6 +702,7 @@ void runDispatcher() {
 
     USLOSS_Context *old = &processTable[currentProcess % MAXPROC].context;
     currentProcess = runQueues[i]->pid;
+    // Reset start time to the current time
     processTable[currentProcess % MAXPROC].curStartTime = currentTime();
     USLOSS_ContextSwitch(old, &processTable[currentProcess % MAXPROC].context);
 }
@@ -820,7 +826,8 @@ int readCurStartTime(void) {
 }
 
 int readtime(void) { 
-    return processTable[currentProcess % MAXPROC].totalTime;    
+    return processTable[currentProcess % MAXPROC].totalTime + currentTime() -
+        readCurStartTime(); 
 }
 
 void timeSlice(void) {
