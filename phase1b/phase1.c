@@ -1,14 +1,16 @@
 /*
-Assignment: Phase1B
+Assignment: Phase 1B
 Group: Grace Zhang and Ellie Martin
 Course: CSC 452 (Operating Systems)
 Instructors: Russell Lewis and Ben Dicken
 Due Date: 9/25/23
 
-Description: Code for phase1a of our operating systems kernel that implements
+Description: Code for Phase 1 of our operating systems kernel that implements
 a library for handling processes. Currently contains functions to create 
-processes, store processes, quit processes and collect them, and to switch
-between processes.
+processes, store processes, block and unblock processes, zap processes, 
+and quit and join processes. Also contains a dispatcher with run queues to 
+determine which processes to switch to. Time slicing is also implemented with 
+an interval of 80 ms.
 
 To compile and run: 
 make
@@ -225,7 +227,7 @@ void phase1_init(void) {
 }
 
 /*
-Function to start/switch to the init process.
+Function to begin/switch to the init process.
 */
 void startProcesses(void) {
     if (USLOSS_PsrGet() % 2 == 0) {
@@ -284,6 +286,7 @@ void addChildToParent(struct PCB *parent, struct PCB *child) {
 Creates a child process of the current process. A PCB entry is created for the
 child process with initial information and stored in the process table. The
 child process is also added to the current process's list of children.
+Additionally calls the dispatcher once the process is created.
 
 Parameters:
     name - the name of the process to create; must be under MAXNAME chars
@@ -420,16 +423,18 @@ void removeChildFromParent(struct PCB *child, struct PCB *parent) {
 
 /*
 Collects a dead child of the current process. If the process
-does not have any children, returns -2. The stack of the 
-collected process is freed, and its entry in the process
-table is also marked as empty.
+does not have any children, returns -2. If the process does
+not have any terminated children, then it is blocked and the
+dispatcher is called. The stack of the collected process is 
+freed, and its entry in the process table is also marked as 
+empty.
 
 Parameters:
     status - an out pointer filled with the status of the 
              dead child process joined-to
 
-Returns: -2 if process has no children, or the pid of the
-         child joined-to
+Returns: -2 if process has no children, otherwise returns the pid 
+         of the child joined-to
 */
 int join(int *status) {
     if (USLOSS_PsrGet() % 2 == 0) {
@@ -469,13 +474,12 @@ int join(int *status) {
 
 /*
 Terminates the current process by marking the process so that it 
-cannot be switched to, and switches to the process with the given
-pid. 
+cannot be switched to and calls the dispatcher to switch processes. 
+If the process has a parent waiting in join() or processes trying to
+zap it, then it unblocks those processes.
 
 Parameters:
-    switchToPid - the pid of the process to switch to
-
-Returns: status - the exit status of the quit process
+    status - out pointer for the exit status of the terminated process
 */
 void quit(int status) {
     if (USLOSS_PsrGet() % 2 == 0) {
@@ -531,7 +535,7 @@ void quit(int status) {
 }
 
 /*
-Returns the pid of the current running process.
+Returns the pid of the currently running process.
 */
 int getpid(void) {
     if (USLOSS_PsrGet() % 2 == 0) {
@@ -582,9 +586,6 @@ void printStatus(int index) {
 Prints out the following information about the processes in the table:
     PID
     Parent PID
-    Child PID (if any)
-    Next Sibling PID (if any)
-    Prev Sibling PID (if any)
     Name of the process
     Priority
     State of the process
@@ -615,6 +616,12 @@ void dumpProcesses(void) {
     restoreInterrupts(savedPsr);
 }
 
+/*
+Adds the process with the given pid to the end of the correct run queue.
+
+Parameters:
+    pid - the pid of the process to add
+*/
 void addProcessToEndOfQueue(int pid) {
     struct PCB *process = &processTable[pid % MAXPROC];
     int priority = process->priority;
@@ -631,6 +638,12 @@ void addProcessToEndOfQueue(int pid) {
     temp->nextInQueue = process;
 } 
 
+/*
+Removes the process with the given pid from its run queue.
+
+Parameters:
+    pid - the pid of the process to remove
+*/
 void removeProcessFromQueue(int pid) {
     struct PCB *process = &processTable[pid % MAXPROC];
     int priority = process->priority;
@@ -654,7 +667,8 @@ void removeProcessFromQueue(int pid) {
 }
 
 /*
-Code from Phase 1B spec.
+Returns the current wall-clock time in microseconds. Code from Phase 1b
+spec.
 */
 int currentTime() {
     int retval;
@@ -663,6 +677,12 @@ int currentTime() {
     return retval;
 }
 
+/*
+This function acts as the dispatcher to decide which process to switch
+to next. It chooses the process with the highest priority. Blocked
+or terminated processes are removed from the run queue. Information
+about the running time of a process is also updated upon switching.
+*/
 void runDispatcher() {
     if (currentProcess > 0) {
         struct PCB *process = &processTable[currentProcess % MAXPROC];
@@ -712,13 +732,14 @@ void runDispatcher() {
 }
 
 /*
-Zap requests a given process to terminate itself (when that process eventually calls quit)
-It first goes through several cases to ensure that a valid pid was given, and then tells the
-given process it has been zapped and adds the current process to the head  of the given
-process' zappedProcesses linked list.
-It then blocks the current process and sets its status accordingly, then calls the dispatcher.
+Zap requests a given process to terminate itself (when that process 
+eventually calls quit). It checks that the process with the given pid can
+be zapped, then marks it as zapped and adds the current process to the head 
+of the given process' zappingProcesses linked list. It then blocks the current 
+process and sets its status accordingly, before calling the dispatcher.
+
 Parameters:
-    int pid: Integer representing the pid of the process to zap.
+    int pid: the pid of the process to zap.
 */
 void zap(int pid) {
     if (USLOSS_PsrGet() % 2 == 0) {
@@ -775,11 +796,21 @@ void zap(int pid) {
     restoreInterrupts(savedPsr);
 }
 
-//returns the isZapped field of the current process to tell whether ot not it has been zapped
+/* 
+Returns 0 if the calling process is not zapped, and 1 if the calling
+is zapped.
+*/
 int isZapped(void) {
     return processTable[currentProcess % MAXPROC].isZapped;
 } 
 
+/*
+Blocks the currently running process and calls the dispatcher.
+Sets the status of the blocked process to newStatus.
+
+Parameters:
+    newStatus - the value to set the status of the process to
+*/
 void blockMe(int newStatus) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
@@ -797,6 +828,15 @@ void blockMe(int newStatus) {
     restoreInterrupts(savedPsr);
 }
 
+/*
+Unblocks the process with the given pid and runs the dispatcher.
+
+Parameters:
+    pid - the pid of the process to unblock
+
+Returns: -2 if the indicated process was not blocked, does not exist, or
+is blocked on a status <= 10, and 0 otherwise.
+*/
 int unblockProc(int pid) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
@@ -818,7 +858,10 @@ int unblockProc(int pid) {
     return 0;
 }
 
-/* this is the interrupt handler for the CLOCK device */
+/* 
+The interrupt handler for the CLOCK device. Calls the dispatcher if the
+time slice has expired. Code from the Phase 1B spec. 
+*/
 static void clockHandler(int dev,void *arg) {
     if (DEBUG_MODE) {
         USLOSS_Console("clockHandler(): PSR = %d\n", USLOSS_PsrGet());
@@ -835,17 +878,27 @@ static void clockHandler(int dev,void *arg) {
     timeSlice();
 }
 
-//returns the current start time of the current running process
+/*
+Returns the start time of the current time slice in ms of the currently 
+running process.
+*/
 int readCurStartTime(void) {
     return processTable[currentProcess % MAXPROC].curStartTime;
 }
 
-//calculates and returns the total time the current process has been running
+/*
+Returns the total time the current process has been running
+since creation, including the current time slice, in ms.
+*/
 int readtime(void) { 
     return processTable[currentProcess % MAXPROC].totalTime + currentTime() -
         readCurStartTime(); 
 }
 
+/*
+Checks if the current process has exceeded its time slice of 80 ms, and
+calls the dispatcher if it has.
+*/
 void timeSlice(void) {
     if (USLOSS_PsrGet() % 2 == 0) {
         USLOSS_Console("Process is not in kernel mode.\n");
