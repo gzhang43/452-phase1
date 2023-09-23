@@ -671,6 +671,10 @@ Returns the current wall-clock time in microseconds. Code from Phase 1b
 spec.
 */
 int currentTime() {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1); 
+    }                   
     int retval;
     int usloss_rc = USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &retval);
     assert(usloss_rc == USLOSS_DEV_OK);
@@ -801,6 +805,10 @@ Returns 0 if the calling process is not zapped, and 1 if the calling
 is zapped.
 */
 int isZapped(void) {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1); 
+    }                   
     return processTable[currentProcess % MAXPROC].isZapped;
 } 
 
@@ -883,6 +891,10 @@ Returns the start time of the current time slice in ms of the currently
 running process.
 */
 int readCurStartTime(void) {
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1); 
+    }                   
     return processTable[currentProcess % MAXPROC].curStartTime;
 }
 
@@ -891,6 +903,10 @@ Returns the total time the current process has been running
 since creation, including the current time slice, in ms.
 */
 int readtime(void) { 
+    if (USLOSS_PsrGet() % 2 == 0) {
+        USLOSS_Console("Process is not in kernel mode.\n");
+        USLOSS_Halt(1); 
+    }                   
     return processTable[currentProcess % MAXPROC].totalTime + currentTime() -
         readCurStartTime(); 
 }
